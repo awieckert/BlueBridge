@@ -3,6 +3,33 @@
 ## Overview
 Build a baseline Android messaging app using React Native (Expo) that integrates with BlueBridge-Relay infrastructure for sending/receiving iMessages. Focus on minimal viable functionality with offline support and clean architecture for future iteration.
 
+## Implementation Progress
+
+**Current Status:** Phase 2 Complete - UI Built, Ready for Backend Integration
+
+| Phase | Status | Completion Date |
+|-------|--------|-----------------|
+| Phase 1: Infrastructure Setup | ✅ **COMPLETE** | 2026-01-24 |
+| Phase 2: UI Screens | ✅ **COMPLETE** | 2026-01-24 |
+| Phase 3: Real-Time Messaging | ⏳ Pending | - |
+| Phase 4: Offline Support | ⏳ Pending | - |
+| Phase 5: Polish & Testing | ⏳ Pending | - |
+
+**What's Working:**
+- ✅ SQLite database with messages, conversations, and queue tables
+- ✅ Zustand state management for messages, connections, queue, and auth
+- ✅ Full UI: Conversations list, Chat screen, Settings screen
+- ✅ Message input and display (saves to local database)
+- ✅ API key configuration and persistence
+- ✅ Light/dark mode throughout
+- ✅ Optimistic UI for sending messages
+
+**What's Next (Phase 3):**
+- SignalR real-time connection to BlueBridge-Relay
+- HTTP API integration for sending messages
+- Network state monitoring
+- Incoming message handling
+
 ## User Requirements
 - **Core Features**: Send text messages, receive real-time messages, conversation view, message persistence
 - **Offline Support**: Queue messages when offline with auto-retry
@@ -11,10 +38,12 @@ Build a baseline Android messaging app using React Native (Expo) that integrates
 
 ## Current Project State
 - **Framework**: Expo SDK 54 + Expo Router (file-based routing)
-- **Navigation**: Tab-based navigation already configured
+- **Navigation**: Tab-based navigation configured (Conversations, Settings, Chat)
 - **Theming**: Light/dark mode system with themed components
 - **Dependencies**: React Native 0.81.5, TypeScript 5.9.2, Reanimated 4.1.1
-- **Missing**: State management, SignalR, SQLite, API integration
+- **Added (Phase 1)**: Zustand state management, expo-sqlite, @microsoft/signalr, NetInfo, AsyncStorage
+- **Added (Phase 2)**: Complete UI screens and components, chat functionality
+- **Remaining**: SignalR connection, HTTP API integration, offline queue processing
 
 ## Architecture
 
@@ -74,10 +103,10 @@ CREATE TABLE messages (
   conversation_id TEXT NOT NULL,
   phone_number TEXT NOT NULL,
   content TEXT NOT NULL,
-  timestamp INTEGER NOT NULL,
-  direction TEXT CHECK(direction IN ('incoming', 'outgoing')),
-  status TEXT CHECK(status IN ('sent', 'queued', 'failed', 'delivered')),
-  created_at INTEGER DEFAULT (strftime('%s', 'now')),
+  timestamp INTEGER NOT NULL,  -- Unix timestamp in milliseconds (JavaScript Date.now())
+  direction TEXT NOT NULL CHECK(direction IN ('incoming', 'outgoing')),
+  status TEXT NOT NULL CHECK(status IN ('sent', 'queued', 'failed', 'delivered')),
+  created_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') || substr(strftime('%f', 'now'), 4) as INTEGER)),
   INDEX idx_conversation (conversation_id, timestamp),
   INDEX idx_status (status)
 );
@@ -87,9 +116,10 @@ CREATE TABLE conversations (
   id TEXT PRIMARY KEY,
   phone_number TEXT UNIQUE NOT NULL,
   last_message_preview TEXT,
-  last_message_timestamp INTEGER,
-  unread_count INTEGER DEFAULT 0,
-  updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+  last_message_timestamp INTEGER,  -- Unix timestamp in milliseconds
+  unread_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') || substr(strftime('%f', 'now'), 4) as INTEGER)),
+  updated_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') || substr(strftime('%f', 'now'), 4) as INTEGER))
 );
 
 -- Offline queue
@@ -98,13 +128,21 @@ CREATE TABLE queue (
   message_id TEXT NOT NULL,
   phone_number TEXT NOT NULL,
   content TEXT NOT NULL,
-  timestamp INTEGER NOT NULL,
-  retry_count INTEGER DEFAULT 0,
-  next_retry_at INTEGER,
+  timestamp INTEGER NOT NULL,  -- Unix timestamp in milliseconds
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  next_retry_at INTEGER,  -- Unix timestamp in milliseconds, NULL until first retry scheduled
   error TEXT,
-  FOREIGN KEY (message_id) REFERENCES messages(id)
+  created_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') || substr(strftime('%f', 'now'), 4) as INTEGER)),
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
 );
 ```
+
+**Schema Notes:**
+- All timestamps use INTEGER type storing milliseconds (JavaScript Date.now() format) for consistency with React Native
+- NOT NULL constraints added to enforce data integrity on required fields
+- CHECK constraints on direction/status prevent invalid enum values
+- Foreign key includes ON DELETE CASCADE to auto-clean queue when message deleted
+- Indexes on frequently queried columns (conversation_id, timestamp, status)
 
 ## Implementation Phases
 
@@ -139,10 +177,21 @@ npm install --save-dev @types/uuid
 - Keep existing ThemeProvider and Stack navigation
 
 **Verification**
-- [ ] Dependencies installed without errors
-- [ ] Zustand stores can be imported and used
-- [ ] SQLite database created on app launch
-- [ ] All tables exist (verify with Expo dev tools)
+- [x] Dependencies installed without errors
+- [x] Zustand stores can be imported and used
+- [x] SQLite database created on app launch
+- [x] All tables exist (verify with Expo dev tools)
+
+**PHASE 1 COMPLETE ✅** (Completed: 2026-01-24)
+
+**What Was Built:**
+- All dependencies added to package.json (zustand, @microsoft/signalr, expo-sqlite, @react-native-community/netinfo, uuid, @react-native-async-storage/async-storage)
+- Type definitions created in `types/` directory (message.ts, api.ts, store.ts)
+- Four Zustand stores created: authStore, messagesStore, connectionStore, queueStore
+- Complete storage service with SQLite CRUD operations for messages, conversations, and queue
+- Database schema with proper indexes, constraints, and foreign keys
+- Constants configuration file for API URLs and retry settings
+- Root layout updated with database initialization and error handling
 
 ### Phase 2: UI Screens (User Interface)
 
@@ -151,6 +200,7 @@ npm install --save-dev @types/uuid
 - `components/ConversationItem.tsx` - Conversation list item with unread badge
 - `components/ConnectionBanner.tsx` - Connection status indicator
 - `components/MessageInput.tsx` - Input bar with send button
+- `components/ScrollToBottomButton.tsx` - Floating button to jump to latest message (shows when scrolled up)
 
 **Build Conversations Screen**
 - Rename `app/(tabs)/index.tsx` → `app/(tabs)/conversations.tsx`
@@ -166,7 +216,8 @@ npm install --save-dev @types/uuid
 - MessageInput component at bottom
 - Back button to conversations list
 - Message status indicators (queued, sent, failed)
-- Auto-scroll to bottom on new message
+- Scroll-to-bottom button (appears when user scrolls up and latest message not in view)
+- Track scroll position to show/hide scroll-to-bottom button
 
 **Build Settings Screen**
 - Rename `app/(tabs)/explore.tsx` → `app/(tabs)/settings.tsx`
@@ -183,11 +234,43 @@ npm install --save-dev @types/uuid
 - Update tab labels
 
 **Verification**
-- [ ] Can navigate between all screens
-- [ ] UI renders in light and dark mode
-- [ ] Connection status displays (even if "Disconnected")
-- [ ] Can input and persist API key
-- [ ] Message bubbles render correctly
+- [x] Can navigate between all screens
+- [x] UI renders in light and dark mode
+- [x] Connection status displays (even if "Disconnected")
+- [x] Can input and persist API key
+- [x] Message bubbles render correctly
+
+**PHASE 2 COMPLETE ✅** (Completed: 2026-01-24)
+
+**What Was Built:**
+
+*UI Components (5 components):*
+- `components/MessageBubble.tsx` - Message display with incoming/outgoing styles, status indicators, timestamps
+- `components/ConversationItem.tsx` - Conversation list item with avatar, unread badge, smart timestamp formatting
+- `components/ConnectionBanner.tsx` - Color-coded connection status banner (auto-hides when connected)
+- `components/MessageInput.tsx` - Message input with send button, character limit, multiline support
+- `components/ScrollToBottomButton.tsx` - Floating scroll button with visibility based on scroll position
+
+*Screens (3 screens):*
+- `app/(tabs)/conversations.tsx` - Conversations list with pull-to-refresh, empty state, loads from SQLite
+- `app/(tabs)/settings.tsx` - API key input, server URL config, connection status, clear history, app info
+- `app/chat/[conversationId].tsx` - Chat view with message list, auto-scroll, optimistic UI, saves to SQLite
+
+*Tab Navigation:*
+- Updated `app/(tabs)/_layout.tsx` with Conversations and Settings tabs
+- Added proper icons (message.fill, gearshape.fill)
+- Hidden old index/explore tabs
+- Enabled headers for navigation
+
+*Key Features:*
+- Messages save to SQLite immediately (optimistic UI)
+- Conversation loading from database on app launch
+- Unread count reset when viewing conversations
+- Light/dark mode throughout all screens
+- Keyboard handling for chat input
+- Scroll position tracking and auto-scroll for new messages
+
+**Note:** Message sending to BlueBridge-Relay server not yet implemented (Phase 3)
 
 ### Phase 3: Real-Time Messaging (SignalR Integration)
 
@@ -208,9 +291,10 @@ npm install --save-dev @types/uuid
 
 **Integrate with App Lifecycle**
 - Connect SignalR on app launch (if API key exists)
-- Disconnect on app background
-- Reconnect on app foreground
+- Maintain connection when app backgrounded (for message reception)
 - Use NetInfo for network state detection
+- Handle app termination gracefully (disconnect on app kill)
+- Reconnect on network state changes (offline → online)
 
 **Wire Up Message Receiving**
 - SignalR `ReceiveMessage` → storageService.saveMessage → messagesStore update
@@ -231,6 +315,9 @@ npm install --save-dev @types/uuid
 - [ ] Incoming messages display in real-time
 - [ ] Connection indicator updates correctly
 - [ ] Messages persist after app restart
+- [ ] Connection maintained when app backgrounded
+- [ ] Messages received while backgrounded appear when foregrounded
+- [ ] Scroll-to-bottom button appears when scrolled away from latest message
 
 ### Phase 4: Offline Support (Queue & Retry)
 
@@ -340,6 +427,7 @@ npm install --save-dev @types/uuid
 - `components/ConversationItem.tsx`
 - `components/ConnectionBanner.tsx`
 - `components/MessageInput.tsx`
+- `components/ScrollToBottomButton.tsx`
 
 **Screens** (Phase 2)
 - `app/(tabs)/conversations.tsx` - Main screen (rename from index.tsx)
@@ -453,8 +541,9 @@ export const useAuthStore = create(
 | Network returns | Auto-reconnects, processes queue |
 | Invalid API key | Shows auth error, prompts settings |
 | Server down | Shows "Disconnected", retries with backoff |
-| App backgrounded | Disconnects SignalR cleanly |
-| App foregrounded | Reconnects, receives queued messages |
+| App backgrounded | Maintains SignalR connection, receives messages |
+| App foregrounded | Connection already active, UI updates |
+| App killed/terminated | Disconnects, reconnects on next launch |
 
 ## Technical Decisions
 
@@ -477,14 +566,18 @@ export const useAuthStore = create(
 - Single source of truth: SQLite drives all UI
 
 ### Background Service Approach
-**Baseline**: No background reception
-- SignalR disconnects when app backgrounded
-- Server queues messages while offline
-- Delivers batch on reconnect
+**Baseline**: Maintain SignalR Connection When Backgrounded
+- SignalR connection stays active when app backgrounded
+- Enables real-time message reception while app in background
+- Lays foundation for future push notification integration
+- Android: Connection maintained by default
+- iOS: Limited background execution time (~30 seconds)
 
-**Future**: Foreground Service (Android) or Background Fetch (iOS)
-- Requires additional permissions and setup
-- Out of scope for baseline MVP
+**Future**: Push Notifications via FCM/APNs
+- Display notifications for messages received while backgrounded
+- Wake app on notification tap
+- Requires FCM/APNs setup and device token registration
+- Out of scope for baseline MVP but infrastructure ready
 
 ## Out of Scope (Future Enhancements)
 
@@ -534,13 +627,73 @@ A successful baseline implementation delivers:
 9. ✅ Light/dark mode theme support
 10. ✅ Clean, maintainable codebase for future iteration
 
-## Next Steps After Plan Approval
+## Implementation Status Summary
 
-1. Install dependencies (Phase 1)
-2. Set up Zustand stores and type definitions
-3. Initialize SQLite database
-4. Build UI screens incrementally
-5. Integrate SignalR and message services
-6. Implement offline queue
-7. Test thoroughly across scenarios
-8. Document setup and usage
+### Completed Steps ✅
+
+1. ✅ Install dependencies (Phase 1) - **DONE**
+2. ✅ Set up Zustand stores and type definitions - **DONE**
+3. ✅ Initialize SQLite database - **DONE**
+4. ✅ Build UI screens incrementally - **DONE**
+5. ⏳ Integrate SignalR and message services - **NEXT (Phase 3)**
+6. ⏳ Implement offline queue - **Phase 4**
+7. ⏳ Test thoroughly across scenarios - **Phase 5**
+8. ⏳ Document setup and usage - **Phase 5**
+
+### Files Created (Phases 1-2)
+
+**Type Definitions (3 files):**
+- `types/message.ts` - Message, Conversation, QueuedMessage interfaces
+- `types/api.ts` - API request/response types
+- `types/store.ts` - Zustand store type definitions
+
+**Stores (5 files):**
+- `stores/authStore.ts` - API key with AsyncStorage persistence
+- `stores/messagesStore.ts` - Messages and conversations state
+- `stores/connectionStore.ts` - Connection status management
+- `stores/queueStore.ts` - Offline queue state
+- `stores/index.ts` - Combined exports
+
+**Services (1 file):**
+- `services/storageService.ts` - Complete SQLite CRUD operations
+
+**Utilities (2 files):**
+- `utils/database.ts` - Database schema and initialization
+- `utils/constants.ts` - App configuration constants
+
+**Components (5 files):**
+- `components/MessageBubble.tsx` - Message display
+- `components/ConversationItem.tsx` - Conversation list item
+- `components/ConnectionBanner.tsx` - Connection status banner
+- `components/MessageInput.tsx` - Message input field
+- `components/ScrollToBottomButton.tsx` - Floating scroll button
+
+**Screens (3 files):**
+- `app/(tabs)/conversations.tsx` - Conversations list screen
+- `app/(tabs)/settings.tsx` - Settings and configuration
+- `app/chat/[conversationId].tsx` - Chat view
+
+**Modified Files (2 files):**
+- `app/_layout.tsx` - Added database initialization
+- `app/(tabs)/_layout.tsx` - Updated tab navigation
+- `package.json` - Added all Phase 1 dependencies
+
+### Next Steps (Phase 3)
+
+**Immediate Next Actions:**
+1. Create `services/signalRService.ts` for real-time WebSocket connection
+2. Create `services/messageService.ts` for HTTP message sending
+3. Integrate NetInfo for network state monitoring
+4. Wire up message sending to BlueBridge-Relay API
+5. Wire up message receiving via SignalR events
+6. Test real-time message flow
+
+**Files to Create in Phase 3:**
+- `services/signalRService.ts`
+- `services/messageService.ts`
+
+**Expected Outcome:**
+- Messages send to real phone numbers via BlueBridge-Relay
+- Incoming messages appear in real-time
+- Connection status updates based on network state
+- Messages persist across app restarts
