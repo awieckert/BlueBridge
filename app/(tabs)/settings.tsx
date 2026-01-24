@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useAuthStore, useConnectionStore, useMessagesStore } from '@/stores';
 import { storageService } from '@/services/storageService';
+import { signalRService } from '@/services/signalRService';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import Constants from 'expo-constants';
 
@@ -31,22 +32,38 @@ export default function SettingsScreen() {
     }
   }, [apiKey]);
 
-  const handleSaveApiKey = () => {
+  const handleSaveApiKey = async () => {
     const trimmedKey = apiKeyInput.trim();
+
+    // Disconnect existing connection
+    await signalRService.disconnect();
+
     if (trimmedKey) {
       setApiKey(trimmedKey);
-      Alert.alert('Success', 'API key saved');
+      // Reconnect with new API key
+      await signalRService.connect();
+      Alert.alert('Success', 'API key saved and connected');
     } else {
       setApiKey(null);
       Alert.alert('Success', 'API key cleared');
     }
   };
 
-  const handleSaveServerUrl = () => {
+  const handleSaveServerUrl = async () => {
     const trimmedUrl = serverUrlInput.trim();
     if (trimmedUrl) {
+      // Disconnect existing connection
+      await signalRService.disconnect();
+
       setServerUrl(trimmedUrl);
-      Alert.alert('Success', 'Server URL saved');
+
+      // Reconnect with new server URL if API key exists
+      if (apiKey) {
+        await signalRService.connect();
+        Alert.alert('Success', 'Server URL saved and reconnected');
+      } else {
+        Alert.alert('Success', 'Server URL saved');
+      }
     }
   };
 
@@ -80,6 +97,7 @@ export default function SettingsScreen() {
   const getConnectionStatusText = () => {
     if (!isOnline) return 'Offline';
     if (connectionStatus === 'connected') return 'Connected';
+    if (connectionStatus === 'connecting') return 'Connecting...';
     if (connectionStatus === 'reconnecting') return 'Reconnecting...';
     return 'Disconnected';
   };
@@ -87,6 +105,7 @@ export default function SettingsScreen() {
   const getConnectionStatusColor = () => {
     if (!isOnline) return '#FF9500';
     if (connectionStatus === 'connected') return '#34C759';
+    if (connectionStatus === 'connecting') return '#007AFF';
     if (connectionStatus === 'reconnecting') return '#FF9500';
     return '#FF3B30';
   };

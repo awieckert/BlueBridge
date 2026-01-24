@@ -10,12 +10,14 @@ import {
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useMessagesStore } from '@/stores';
 import { storageService } from '@/services/storageService';
+import { messageService } from '@/services/messageService';
 import { MessageBubble } from '@/components/MessageBubble';
 import { MessageInput } from '@/components/MessageInput';
 import { ScrollToBottomButton } from '@/components/ScrollToBottomButton';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { v4 as uuidv4 } from 'uuid';
 import type { Message } from '@/types/message';
+import type { ApiError } from '@/types/api';
 
 export default function ChatScreen() {
   const params = useLocalSearchParams<{ conversationId: string }>();
@@ -62,8 +64,9 @@ export default function ChatScreen() {
     if (!conversation) return;
 
     const now = Date.now();
+    const messageId = uuidv4();
     const message: Message = {
-      id: uuidv4(),
+      id: messageId,
       conversationId: params.conversationId,
       phoneNumber: conversation.phoneNumber,
       content,
@@ -91,10 +94,29 @@ export default function ChatScreen() {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
 
-      // TODO: Phase 3 - Send via messageService
+      // Send via messageService
+      try {
+        const response = await messageService.sendMessage(
+          conversation.phoneNumber,
+          content,
+          now
+        );
+
+        console.log('Message sent successfully:', response);
+      } catch (apiError) {
+        // Handle send failure
+        const error = apiError as ApiError;
+        console.error('Failed to send message via API:', error.message);
+
+        // Update message status to failed
+        const updatedMessage = { ...message, status: 'failed' as const };
+        useMessagesStore.getState().updateMessage(messageId, { status: 'failed' });
+        await storageService.updateMessageStatus(messageId, 'failed');
+
+        // TODO: Phase 4 - Queue message for retry
+      }
     } catch (error) {
       console.error('Failed to send message:', error);
-      // TODO: Update message status to 'failed'
     }
   };
 

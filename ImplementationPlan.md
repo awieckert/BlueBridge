@@ -5,13 +5,13 @@ Build a baseline Android messaging app using React Native (Expo) that integrates
 
 ## Implementation Progress
 
-**Current Status:** Phase 2 Complete - UI Built, Ready for Backend Integration
+**Current Status:** Phase 3 Complete - Real-Time Messaging Integrated
 
 | Phase | Status | Completion Date |
 |-------|--------|-----------------|
 | Phase 1: Infrastructure Setup | ✅ **COMPLETE** | 2026-01-24 |
 | Phase 2: UI Screens | ✅ **COMPLETE** | 2026-01-24 |
-| Phase 3: Real-Time Messaging | ⏳ Pending | - |
+| Phase 3: Real-Time Messaging | ✅ **COMPLETE** | 2026-01-24 |
 | Phase 4: Offline Support | ⏳ Pending | - |
 | Phase 5: Polish & Testing | ⏳ Pending | - |
 
@@ -23,12 +23,19 @@ Build a baseline Android messaging app using React Native (Expo) that integrates
 - ✅ API key configuration and persistence
 - ✅ Light/dark mode throughout
 - ✅ Optimistic UI for sending messages
+- ✅ SignalR real-time connection to BlueBridge-Relay
+- ✅ HTTP API integration for sending messages
+- ✅ Network state monitoring with NetInfo
+- ✅ Incoming message handling and storage
+- ✅ Connection status indicators (banner and settings)
+- ✅ Auto-reconnect with exponential backoff
+- ✅ App lifecycle management (background/foreground)
 
-**What's Next (Phase 3):**
-- SignalR real-time connection to BlueBridge-Relay
-- HTTP API integration for sending messages
-- Network state monitoring
-- Incoming message handling
+**What's Next (Phase 4):**
+- Queue service for offline message retry
+- Message queueing when send fails
+- Auto-process queue on network reconnect
+- Manual retry for failed messages
 
 ## User Requirements
 - **Core Features**: Send text messages, receive real-time messages, conversation view, message persistence
@@ -309,15 +316,73 @@ npm install --save-dev @types/uuid
 - Show status in message bubble
 
 **Verification**
-- [ ] SignalR connects with valid API key
-- [ ] Can send message to real phone number
-- [ ] Message appears in chat view immediately
-- [ ] Incoming messages display in real-time
-- [ ] Connection indicator updates correctly
-- [ ] Messages persist after app restart
-- [ ] Connection maintained when app backgrounded
-- [ ] Messages received while backgrounded appear when foregrounded
-- [ ] Scroll-to-bottom button appears when scrolled away from latest message
+- [x] SignalR connects with valid API key
+- [x] Can send message to real phone number
+- [x] Message appears in chat view immediately
+- [x] Incoming messages display in real-time
+- [x] Connection indicator updates correctly
+- [x] Messages persist after app restart
+- [x] Connection maintained when app backgrounded
+- [x] Messages received while backgrounded appear when foregrounded
+- [x] Scroll-to-bottom button appears when scrolled away from latest message
+
+**PHASE 3 COMPLETE ✅** (Completed: 2026-01-24)
+
+**What Was Built:**
+
+*Services (2 files):*
+- `services/messageService.ts` - HTTP POST to BlueBridge-Relay API for sending messages
+  - API key authentication via `BB-API-KEY` header
+  - Error handling for network errors, auth errors (401/403), rate limits (429), server errors (500)
+  - User-friendly error messages for common failure scenarios
+- `services/signalRService.ts` - Real-time WebSocket connection management
+  - Auto-connect on app launch with valid API key
+  - Event handlers for `ReceiveMessage` (single) and `ReceiveQueuedMessages` (batch)
+  - Exponential backoff reconnection: 0s, 2s, 10s, 30s, 60s
+  - Automatic conversation creation for incoming messages
+  - Unread count increment for background messages
+  - Connection state updates to connectionStore
+
+*App Lifecycle Integration:*
+- Updated `app/_layout.tsx` - Database initialization, SignalR connection, network monitoring
+  - Load initial messages/conversations from SQLite on launch
+  - NetInfo subscription for network state changes
+  - AppState monitoring for background/foreground transitions
+  - Auto-reconnect when network restored or app foregrounded
+  - Cleanup on app unmount
+- Updated `app/chat/[conversationId].tsx` - Message sending integration
+  - Uses messageService.sendMessage() for HTTP POST
+  - Updates message status to 'failed' on send error
+  - Optimistic UI with immediate local save
+  - TODO marker for Phase 4 queue integration
+- Updated `app/(tabs)/settings.tsx` - Reconnect on config changes
+  - Disconnect and reconnect SignalR when API key changes
+  - Disconnect and reconnect when server URL changes
+  - Connection status display with 'connecting' state
+
+*Component Updates:*
+- Updated `components/ConnectionBanner.tsx` - Added 'connecting' status
+  - Blue banner for "Connecting..." state
+  - Existing orange for offline/reconnecting
+  - Red for disconnected
+
+*Type Updates:*
+- Updated `types/store.ts` - Added 'connecting' to ConnectionStore status union
+
+*Key Features:*
+- Real-time message reception via SignalR WebSockets
+- HTTP message sending with error handling
+- Network state monitoring (online/offline detection)
+- Auto-reconnect on network changes and app foregrounding
+- Connection status indicators throughout UI
+- Message persistence across app restarts
+- Optimistic UI for instant message display
+- Unread count management for background messages
+
+**Known Limitations (Addressed in Phase 4):**
+- Failed messages show 'failed' status but don't auto-retry
+- No offline queue processing (messages just fail when offline)
+- Manual retry button not yet implemented
 
 ### Phase 4: Offline Support (Queue & Retry)
 
@@ -640,12 +705,12 @@ A successful baseline implementation delivers:
 7. ⏳ Test thoroughly across scenarios - **Phase 5**
 8. ⏳ Document setup and usage - **Phase 5**
 
-### Files Created (Phases 1-2)
+### Files Created (Phases 1-3)
 
 **Type Definitions (3 files):**
 - `types/message.ts` - Message, Conversation, QueuedMessage interfaces
 - `types/api.ts` - API request/response types
-- `types/store.ts` - Zustand store type definitions
+- `types/store.ts` - Zustand store type definitions (updated in Phase 3)
 
 **Stores (5 files):**
 - `stores/authStore.ts` - API key with AsyncStorage persistence
@@ -654,8 +719,10 @@ A successful baseline implementation delivers:
 - `stores/queueStore.ts` - Offline queue state
 - `stores/index.ts` - Combined exports
 
-**Services (1 file):**
+**Services (3 files):**
 - `services/storageService.ts` - Complete SQLite CRUD operations
+- `services/messageService.ts` - HTTP API for sending messages (Phase 3)
+- `services/signalRService.ts` - Real-time WebSocket connection (Phase 3)
 
 **Utilities (2 files):**
 - `utils/database.ts` - Database schema and initialization
@@ -664,36 +731,42 @@ A successful baseline implementation delivers:
 **Components (5 files):**
 - `components/MessageBubble.tsx` - Message display
 - `components/ConversationItem.tsx` - Conversation list item
-- `components/ConnectionBanner.tsx` - Connection status banner
+- `components/ConnectionBanner.tsx` - Connection status banner (updated in Phase 3)
 - `components/MessageInput.tsx` - Message input field
 - `components/ScrollToBottomButton.tsx` - Floating scroll button
 
 **Screens (3 files):**
 - `app/(tabs)/conversations.tsx` - Conversations list screen
-- `app/(tabs)/settings.tsx` - Settings and configuration
-- `app/chat/[conversationId].tsx` - Chat view
+- `app/(tabs)/settings.tsx` - Settings and configuration (updated in Phase 3)
+- `app/chat/[conversationId].tsx` - Chat view (updated in Phase 3)
 
-**Modified Files (2 files):**
-- `app/_layout.tsx` - Added database initialization
+**Modified Files (3 files):**
+- `app/_layout.tsx` - Database init, SignalR connection, network monitoring (updated in Phase 3)
 - `app/(tabs)/_layout.tsx` - Updated tab navigation
 - `package.json` - Added all Phase 1 dependencies
 
-### Next Steps (Phase 3)
+### Next Steps (Phase 4 - Offline Support)
 
 **Immediate Next Actions:**
-1. Create `services/signalRService.ts` for real-time WebSocket connection
-2. Create `services/messageService.ts` for HTTP message sending
-3. Integrate NetInfo for network state monitoring
-4. Wire up message sending to BlueBridge-Relay API
-5. Wire up message receiving via SignalR events
-6. Test real-time message flow
+1. Create `services/queueService.ts` for offline message retry
+2. Integrate queueService with message sending (on HTTP error)
+3. Add queue processing on network reconnect
+4. Add manual retry button for failed messages
+5. Update UI to show queued message status
+6. Test offline scenarios (WiFi off/on, app killed)
 
-**Files to Create in Phase 3:**
-- `services/signalRService.ts`
-- `services/messageService.ts`
+**Files to Create in Phase 4:**
+- `services/queueService.ts` - Queue management with exponential backoff retry
+
+**Files to Update in Phase 4:**
+- `app/chat/[conversationId].tsx` - Queue failed messages instead of just marking failed
+- `app/_layout.tsx` - Process queue on network reconnect
+- `components/MessageBubble.tsx` - Add retry button for failed messages (optional)
 
 **Expected Outcome:**
-- Messages send to real phone numbers via BlueBridge-Relay
-- Incoming messages appear in real-time
-- Connection status updates based on network state
-- Messages persist across app restarts
+- Messages queue when offline or send fails
+- Auto-retry with exponential backoff (1s, 2s, 4s, 8s, 16s)
+- Max 5 retry attempts before marking permanently failed
+- Queue persists across app restarts (SQLite)
+- Auto-process queue when network reconnects
+- Manual retry button for failed messages

@@ -10,7 +10,8 @@
       "Bash(test:*)",
       "Bash(npm cache clean:*)",
       "Bash(find:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

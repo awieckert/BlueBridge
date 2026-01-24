@@ -23,13 +23,13 @@ export interface MessagesStore {
 export interface ConnectionStore {
   isConnected: boolean;
   isOnline: boolean;
-  connectionStatus: 'connected' | 'disconnected' | 'reconnecting';
+  connectionStatus: 'connected' | 'disconnected' | 'reconnecting' | 'connecting';
   lastError: string | null;
 
   // Actions
   setConnected: (connected: boolean) => void;
   setOnline: (online: boolean) => void;
-  setConnectionStatus: (status: 'connected' | 'disconnected' | 'reconnecting') => void;
+  setConnectionStatus: (status: 'connected' | 'disconnected' | 'reconnecting' | 'connecting') => void;
   setLastError: (error: string | null) => void;
 }
 

@@ -17,6 +17,13 @@ export function ConnectionBanner() {
       };
     }
 
+    if (connectionStatus === 'connecting') {
+      return {
+        text: 'Connecting...',
+        color: '#007AFF',
+      };
+    }
+
     if (connectionStatus === 'reconnecting') {
       return {
         text: 'Reconnecting...',
