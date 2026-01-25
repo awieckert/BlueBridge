@@ -5,20 +5,21 @@ Build a baseline Android messaging app using React Native (Expo) that integrates
 
 ## Implementation Progress
 
-**Current Status:** Phase 3 Complete - Real-Time Messaging Integrated
+**Current Status:** Phase 3.5 Complete - Contact Integration & New Conversations
 
 | Phase | Status | Completion Date |
 |-------|--------|-----------------|
 | Phase 1: Infrastructure Setup | ✅ **COMPLETE** | 2026-01-24 |
 | Phase 2: UI Screens | ✅ **COMPLETE** | 2026-01-24 |
 | Phase 3: Real-Time Messaging | ✅ **COMPLETE** | 2026-01-24 |
+| Phase 3.5: New Conversations & Contact Integration | ✅ **COMPLETE** | 2026-01-25 |
 | Phase 4: Offline Support | ⏳ Pending | - |
 | Phase 5: Polish & Testing | ⏳ Pending | - |
 
 **What's Working:**
 - ✅ SQLite database with messages, conversations, and queue tables
-- ✅ Zustand state management for messages, connections, queue, and auth
-- ✅ Full UI: Conversations list, Chat screen, Settings screen
+- ✅ Zustand state management for messages, connections, queue, auth, and contacts
+- ✅ Full UI: Conversations list, Chat screen, Settings screen, New Conversation screen
 - ✅ Message input and display (saves to local database)
 - ✅ API key configuration and persistence
 - ✅ Light/dark mode throughout
@@ -30,6 +31,13 @@ Build a baseline Android messaging app using React Native (Expo) that integrates
 - ✅ Connection status indicators (banner and settings)
 - ✅ Auto-reconnect with exponential backoff
 - ✅ App lifecycle management (background/foreground)
+- ✅ Contact integration with device contacts (expo-contacts)
+- ✅ New conversation screen with contact picker and search
+- ✅ Phone number normalization and validation (libphonenumber-js)
+- ✅ Contact names displayed in conversations list and chat headers
+- ✅ Manual phone number entry for creating conversations
+- ✅ Floating action button for easy access to new conversations
+- ✅ Automatic contact name lookup for incoming messages
 
 **What's Next (Phase 4):**
 - Queue service for offline message retry
@@ -384,6 +392,271 @@ npm install --save-dev @types/uuid
 - No offline queue processing (messages just fail when offline)
 - Manual retry button not yet implemented
 
+### Phase 3.5: New Conversations & Contact Integration
+
+**Install Dependencies**
+```bash
+npm install expo-contacts libphonenumber-js
+npm install --save-dev @types/libphonenumber-js
+```
+
+**Create Contact Service**
+- `services/contactService.ts`
+- Request contacts permission via `Contacts.requestPermissionsAsync()`
+- Fetch all contacts with phone numbers using `getContactsAsync()`
+- Normalize phone numbers to E.164 format (+1234567890) for consistent matching
+- Cache contacts in memory for performance (refresh on app launch)
+- Lookup contact name by phone number for incoming messages
+- Handle permission denied gracefully
+
+**Create Contact Store**
+- `stores/contactStore.ts`
+- Store fetched contacts array
+- Track permission status ('granted', 'denied', 'undetermined')
+- Provide search/filter functionality (by name or phone number)
+- Sync contact names with existing conversations
+
+**Create Phone Number Utilities**
+- `utils/phoneNumber.ts`
+- Normalize phone numbers to E.164 format using libphonenumber-js
+- Validate phone numbers (check if valid format)
+- Format for display (e.g., "+1 (234) 567-8900")
+- Match different phone number formats (handle (123) 456-7890 vs +11234567890)
+
+**Build New Conversation Screen**
+- `app/conversation/new.tsx`
+- **Search Bar** at top
+  - Real-time search across contacts AND existing conversations
+  - Debounced input (300ms) for performance
+  - Clear button to reset search
+- **Two Sections (conditional rendering):**
+  - "Contacts" - Device contacts with phone numbers (filtered by search)
+  - "Recent Conversations" - Existing message threads (filtered by search)
+- **Contact List Item Component:**
+  - Contact photo/avatar placeholder (first letter of name)
+  - Contact name (primary text, bold)
+  - Phone number (secondary text, gray)
+  - Tap to create conversation and navigate to chat
+- **Manual Phone Number Entry:**
+  - "Enter phone number manually" button at bottom (always visible)
+  - Shows input dialog/modal with phone number field
+  - Format validation using libphonenumber-js
+  - Shows validation errors ("Invalid phone number format")
+  - "Start Chat" button (disabled if invalid)
+- **Permission Handling:**
+  - Request permission on first screen load
+  - Show explanation before requesting ("Access contacts to easily message friends")
+  - If denied: hide contacts section, show manual entry only
+  - "Grant Permission" button to re-request if denied
+
+**Create UI Components**
+- `components/ContactListItem.tsx` - Contact picker item
+  - Avatar with first letter of name
+  - Name and phone number display
+  - Tap handler to select contact
+  - Match highlighting (optional polish)
+
+**Update Database Schema**
+- Add `contact_name` column to conversations table:
+```sql
+ALTER TABLE conversations ADD COLUMN contact_name TEXT;
+```
+- Migration handled in `utils/database.ts`
+
+**Update Existing Components**
+- `components/ConversationItem.tsx`
+  - Display contact name if available (fallback to phone number)
+  - Format: "John Doe" vs "+1 (234) 567-8900"
+- `app/chat/[conversationId].tsx`
+  - Display contact name in header instead of phone number
+  - Load contact name from conversation or lookup in contactStore
+- `app/(tabs)/conversations.tsx`
+  - Add floating action button (FAB) for "New Message"
+  - Position: bottom right, above tab bar
+  - Icon: compose/plus icon
+  - Navigate to `conversation/new` on tap
+
+**Update Services**
+- `services/signalRService.ts`
+  - When receiving message, lookup contact name by phone number
+  - Save contact name when creating new conversation
+  - Update existing conversation if contact name found
+- `services/storageService.ts`
+  - Add methods to save/update contact names in conversations
+  - `updateConversationContactName(conversationId, contactName)`
+  - Query to fetch conversations with contact names
+
+**Update Configuration**
+- `app.json` - Add Android permissions:
+```json
+{
+  "expo": {
+    "android": {
+      "permissions": [
+        "android.permission.READ_CONTACTS"
+      ]
+    }
+  }
+}
+```
+
+**Data Flow**
+
+**Starting New Conversation:**
+1. User taps "New Message" FAB on conversations screen
+2. Navigate to `app/conversation/new.tsx`
+3. Request READ_CONTACTS permission (if not already granted)
+4. Fetch all contacts with phone numbers
+5. User searches or scrolls to find contact
+6. Tap contact → Normalize phone number → Check if conversation exists
+7. If exists: Navigate to existing chat
+8. If new: Create conversation in SQLite with contact name → Navigate to chat
+9. User can immediately send first message
+
+**Receiving Message from Contact:**
+1. SignalR receives message with phone number
+2. Normalize phone number to E.164 format
+3. Lookup contact name from contactStore (compare normalized numbers)
+4. Save message to SQLite
+5. Create/update conversation with contact name
+6. Display contact name in conversations list and chat header
+
+**Search Functionality:**
+- Searches contact names, phone numbers (normalized), and existing conversation previews
+- Case-insensitive matching
+- Debounced input (300ms) to prevent lag
+- Sections hide when empty (e.g., no matching contacts)
+
+**Edge Cases**
+- Permission denied → Show manual entry only, hide contacts section
+- No contacts with phone numbers → Show empty state with manual entry
+- Duplicate conversation prevention → Check by normalized phone number
+- Contact name changes on device → Refresh contacts on app launch
+- Phone number normalization fails → Use raw phone number
+- Multiple phone numbers per contact → Show all, let user choose
+
+**Verification**
+- [x] Contacts permission request appears on first use
+- [x] Shows all device contacts with phone numbers
+- [x] Search filters contacts and conversations in real-time
+- [x] Can tap contact to start new conversation
+- [x] Duplicate conversations prevented (navigates to existing)
+- [x] Can manually enter phone number if contact not found
+- [x] Invalid phone numbers show validation error
+- [x] Valid manual phone number creates conversation
+- [x] Contact names display in conversations list
+- [x] Contact names display in chat header
+- [x] Incoming messages from contacts show contact name
+- [x] Incoming messages from unknown numbers show phone number
+- [x] Works gracefully if permission denied (manual entry only)
+- [x] FAB appears on conversations screen
+- [x] Contact names persist after app restart
+- [x] Phone number normalization handles different formats
+
+**Files to Create**
+- `services/contactService.ts` - Contact fetching and lookup (150-200 lines)
+- `stores/contactStore.ts` - Contact state management (100-150 lines)
+- `utils/phoneNumber.ts` - Phone number normalization/validation (50-75 lines)
+- `app/conversation/new.tsx` - New conversation screen (250-300 lines)
+- `components/ContactListItem.tsx` - Contact picker item (75-100 lines)
+
+**Files to Modify**
+- `app/(tabs)/conversations.tsx` - Add "New Message" FAB (~10 lines)
+- `app/chat/[conversationId].tsx` - Display contact name in header (~15 lines)
+- `components/ConversationItem.tsx` - Display contact name if available (~10 lines)
+- `services/signalRService.ts` - Lookup contact name for incoming messages (~20 lines)
+- `services/storageService.ts` - Save/update contact names in conversations (~30 lines)
+- `utils/database.ts` - Add contact_name column migration (~15 lines)
+- `package.json` - Add expo-contacts and libphonenumber-js
+- `app.json` - Add READ_CONTACTS permission (~5 lines)
+
+**PHASE 3.5 COMPLETE ✅** (Completed: 2026-01-25)
+
+**What Was Built:**
+
+*Dependencies (3 packages):*
+- `expo-contacts` (~15.0.4) - Access device contacts
+- `libphonenumber-js` (1.12.35) - Phone number normalization and validation
+- `@types/libphonenumber-js` (1.0.1) - TypeScript definitions
+
+*Phone Number Utilities (1 file):*
+- `utils/phoneNumber.ts` - Comprehensive phone number handling
+  - Normalize to E.164 format (+1234567890)
+  - Validate phone number format
+  - Format for display (+1 (234) 567-8900)
+  - Match different phone number formats
+  - Extract digits and country codes
+
+*Contact Service (1 file):*
+- `services/contactService.ts` - Contact management with caching
+  - Request/check contacts permission
+  - Fetch contacts with phone numbers (with 5-minute cache)
+  - Lookup contact by phone number
+  - Search contacts by name or number
+  - Handle permission denied gracefully
+
+*Contact Store (1 file):*
+- `stores/contactStore.ts` - Zustand state management
+  - Track contacts array and permission status
+  - Request permission and load contacts
+  - Search/filter functionality
+  - Contact lookup methods
+
+*Database Enhancements:*
+- Added `contact_name` column to conversations table
+- Created migration system to update existing databases
+- Updated Conversation type to include `contactName`
+- Added helper methods: `updateConversationContactName()`, `updateConversationContactNameByPhoneNumber()`
+
+*UI Components (1 file):*
+- `components/ContactListItem.tsx` - Contact display
+  - Avatar with first letter of contact name
+  - Contact name and formatted phone number
+  - Indicator for multiple phone numbers
+  - Light/dark mode support
+
+*New Conversation Screen (1 file):*
+- `app/conversation/new.tsx` - Full-featured contact picker (300+ lines)
+  - Search bar with debouncing (filters contacts & conversations)
+  - Combined list showing contacts and existing conversations
+  - Manual phone number entry modal with validation
+  - Permission request UI with explanation
+  - Duplicate conversation prevention
+  - Creates conversation with contact name
+  - Navigates to existing or new chat
+
+*Floating Action Button:*
+- Added FAB to conversations screen (bottom-right)
+- Navigate to new conversation screen
+- Styled for light/dark mode
+
+*Contact Name Integration:*
+- Updated `ConversationItem.tsx` to show contact name if available
+- Updated chat screen header to display contact name
+- Updated SignalR service to lookup and save contact names for incoming messages
+- Contact names persist in SQLite database
+
+*Configuration:*
+- Added `READ_CONTACTS` permission to app.json (Android)
+
+**Achieved Outcomes:**
+- ✅ Users can start new conversations by selecting contacts
+- ✅ Contact names appear in conversations list and chat headers
+- ✅ Search functionality across contacts and existing conversations
+- ✅ Phone number normalization ensures reliable contact matching
+- ✅ Manual entry available when contacts not accessible
+- ✅ Seamless UX like native messaging apps (iMessage, WhatsApp)
+- ✅ Permission handling with graceful fallback
+- ✅ Automatic contact name lookup for incoming messages
+- ✅ Contact names persist across app restarts
+
+**Research Sources:**
+- [Expo Contacts Documentation](https://docs.expo.dev/versions/latest/sdk/contacts/)
+- [expo-contacts npm package](https://www.npmjs.com/package/expo-contacts)
+- [React Native Contacts - LogRocket](https://blog.logrocket.com/react-native-contacts-how-to-access-a-devices-contact-list/)
+- [libphonenumber-js for phone number normalization](https://www.npmjs.com/package/react-phone-number-input)
+- [Mastering Contacts in React Native + Expo](https://medium.com/@iLuckyisrael/mastering-sms-contacts-and-location-in-react-native-expo-permissions-8fe4adc4bcd8)
+
 ### Phase 4: Offline Support (Queue & Retry)
 
 **Create Queue Service**
@@ -470,38 +743,43 @@ npm install --save-dev @types/uuid
 
 ### New Files to Create
 
-**Services** (Phase 1 & 3)
+**Services** (Phase 1, 3 & 3.5)
 - `services/signalRService.ts` - Real-time WebSocket connection
 - `services/messageService.ts` - HTTP API for sending messages
 - `services/storageService.ts` - SQLite database operations
+- `services/contactService.ts` - Contact fetching and lookup (Phase 3.5)
 - `services/queueService.ts` - Offline message queue (Phase 4)
 
-**Stores** (Phase 1)
+**Stores** (Phase 1 & 3.5)
 - `stores/messagesStore.ts` - Message and conversation state
 - `stores/connectionStore.ts` - Connection state management
 - `stores/queueStore.ts` - Queue state management
 - `stores/authStore.ts` - API key persistence
+- `stores/contactStore.ts` - Contact state management (Phase 3.5)
 
 **Types** (Phase 1)
 - `types/message.ts` - Data model interfaces
 - `types/api.ts` - API request/response types
 - `types/store.ts` - Store type definitions
 
-**UI Components** (Phase 2)
+**UI Components** (Phase 2 & 3.5)
 - `components/MessageBubble.tsx`
 - `components/ConversationItem.tsx`
 - `components/ConnectionBanner.tsx`
 - `components/MessageInput.tsx`
 - `components/ScrollToBottomButton.tsx`
+- `components/ContactListItem.tsx` (Phase 3.5)
 
-**Screens** (Phase 2)
+**Screens** (Phase 2 & 3.5)
 - `app/(tabs)/conversations.tsx` - Main screen (rename from index.tsx)
 - `app/(tabs)/settings.tsx` - Settings screen (rename from explore.tsx)
 - `app/chat/[conversationId].tsx` - Chat view (new route)
+- `app/conversation/new.tsx` - New conversation screen (Phase 3.5)
 
-**Utilities** (Phase 1)
+**Utilities** (Phase 1 & 3.5)
 - `utils/database.ts` - SQL schema and migrations
 - `utils/constants.ts` - App-wide constants (API URLs, retry delays)
+- `utils/phoneNumber.ts` - Phone number normalization/validation (Phase 3.5)
 
 ### Files to Modify
 
@@ -669,13 +947,14 @@ export const useAuthStore = create(
 
 ## Timeline Estimate
 
-- **Phase 1 (Infrastructure)**: 2 days
-- **Phase 2 (UI Screens)**: 2 days
-- **Phase 3 (Real-Time)**: 2 days
+- **Phase 1 (Infrastructure)**: 2 days ✅
+- **Phase 2 (UI Screens)**: 2 days ✅
+- **Phase 3 (Real-Time)**: 2 days ✅
+- **Phase 3.5 (Contacts & New Conversations)**: 2 days
 - **Phase 4 (Offline)**: 2 days
 - **Phase 5 (Polish)**: 2 days
 
-**Total**: ~10 days (assumes single developer, no blockers)
+**Total**: ~12 days (assumes single developer, no blockers)
 
 ## Success Criteria
 
@@ -686,11 +965,13 @@ A successful baseline implementation delivers:
 3. ✅ Conversation list showing all message threads
 4. ✅ Chat view displaying message history
 5. ✅ Message persistence in SQLite (survives app restart)
-6. ✅ Offline queue with auto-retry on reconnect
-7. ✅ Connection status indicators
-8. ✅ Settings for API key configuration
-9. ✅ Light/dark mode theme support
-10. ✅ Clean, maintainable codebase for future iteration
+6. ✅ Start new conversations with contact picker and search
+7. ✅ Contact integration with name display throughout app
+8. ⏳ Offline queue with auto-retry on reconnect
+9. ✅ Connection status indicators
+10. ✅ Settings for API key configuration
+11. ✅ Light/dark mode theme support
+12. ✅ Clean, maintainable codebase for future iteration
 
 ## Implementation Status Summary
 
@@ -700,50 +981,57 @@ A successful baseline implementation delivers:
 2. ✅ Set up Zustand stores and type definitions - **DONE**
 3. ✅ Initialize SQLite database - **DONE**
 4. ✅ Build UI screens incrementally - **DONE**
-5. ⏳ Integrate SignalR and message services - **NEXT (Phase 3)**
-6. ⏳ Implement offline queue - **Phase 4**
-7. ⏳ Test thoroughly across scenarios - **Phase 5**
-8. ⏳ Document setup and usage - **Phase 5**
+5. ✅ Integrate SignalR and message services - **DONE (Phase 3)**
+6. ✅ Add contact integration and new conversation UI - **DONE (Phase 3.5)**
+7. ⏳ Implement offline queue - **NEXT (Phase 4)**
+8. ⏳ Test thoroughly across scenarios - **Phase 5**
+9. ⏳ Document setup and usage - **Phase 5**
 
-### Files Created (Phases 1-3)
+### Files Created (Phases 1-3.5) ✅
 
 **Type Definitions (3 files):**
-- `types/message.ts` - Message, Conversation, QueuedMessage interfaces
+- `types/message.ts` - Message, Conversation, QueuedMessage interfaces (updated in Phase 3.5 for contactName)
 - `types/api.ts` - API request/response types
 - `types/store.ts` - Zustand store type definitions (updated in Phase 3)
 
-**Stores (5 files):**
+**Stores (6 files):**
 - `stores/authStore.ts` - API key with AsyncStorage persistence
 - `stores/messagesStore.ts` - Messages and conversations state
 - `stores/connectionStore.ts` - Connection status management
 - `stores/queueStore.ts` - Offline queue state
-- `stores/index.ts` - Combined exports
+- `stores/contactStore.ts` - Contact state management (Phase 3.5)
+- `stores/index.ts` - Combined exports (updated in Phase 3.5)
 
-**Services (3 files):**
-- `services/storageService.ts` - Complete SQLite CRUD operations
+**Services (4 files):**
+- `services/storageService.ts` - Complete SQLite CRUD operations (updated in Phase 3.5)
 - `services/messageService.ts` - HTTP API for sending messages (Phase 3)
-- `services/signalRService.ts` - Real-time WebSocket connection (Phase 3)
+- `services/signalRService.ts` - Real-time WebSocket connection (Phase 3, updated in Phase 3.5)
+- `services/contactService.ts` - Contact fetching and lookup (Phase 3.5)
 
-**Utilities (2 files):**
-- `utils/database.ts` - Database schema and initialization
+**Utilities (3 files):**
+- `utils/database.ts` - Database schema and initialization (updated in Phase 3.5 with migrations)
 - `utils/constants.ts` - App configuration constants
+- `utils/phoneNumber.ts` - Phone number normalization/validation (Phase 3.5)
 
-**Components (5 files):**
+**Components (6 files):**
 - `components/MessageBubble.tsx` - Message display
-- `components/ConversationItem.tsx` - Conversation list item
+- `components/ConversationItem.tsx` - Conversation list item (updated in Phase 3.5)
 - `components/ConnectionBanner.tsx` - Connection status banner (updated in Phase 3)
 - `components/MessageInput.tsx` - Message input field
 - `components/ScrollToBottomButton.tsx` - Floating scroll button
+- `components/ContactListItem.tsx` - Contact picker item (Phase 3.5)
 
-**Screens (3 files):**
-- `app/(tabs)/conversations.tsx` - Conversations list screen
+**Screens (4 files):**
+- `app/(tabs)/conversations.tsx` - Conversations list screen (updated in Phase 3.5 with FAB)
 - `app/(tabs)/settings.tsx` - Settings and configuration (updated in Phase 3)
-- `app/chat/[conversationId].tsx` - Chat view (updated in Phase 3)
+- `app/chat/[conversationId].tsx` - Chat view (updated in Phase 3 & 3.5)
+- `app/conversation/new.tsx` - New conversation screen (Phase 3.5)
 
-**Modified Files (3 files):**
+**Modified Files (4 files):**
 - `app/_layout.tsx` - Database init, SignalR connection, network monitoring (updated in Phase 3)
 - `app/(tabs)/_layout.tsx` - Updated tab navigation
-- `package.json` - Added all Phase 1 dependencies
+- `package.json` - Added dependencies (Phases 1 & 3.5)
+- `app.json` - Added READ_CONTACTS permission (Phase 3.5)
 
 ### Next Steps (Phase 4 - Offline Support)
 

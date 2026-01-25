@@ -48,7 +48,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             isDark && !isOutgoing && styles.incomingTextDark,
           ]}
         >
-          {message.content}
+          {message.message}
         </Text>
         <View style={styles.metaContainer}>
           <Text style={[styles.timestamp, isOutgoing && styles.outgoingTimestamp]}>

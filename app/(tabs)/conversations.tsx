@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, FlatList, StyleSheet, Text, RefreshControl } from 'react-native';
+import { View, FlatList, StyleSheet, Text, RefreshControl, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useMessagesStore, useConnectionStore } from '@/stores';
 import { storageService } from '@/services/storageService';
@@ -41,6 +41,10 @@ export default function ConversationsScreen() {
     });
   };
 
+  const handleNewConversation = () => {
+    router.push('/conversation/new');
+  };
+
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
       <Text style={[styles.emptyText, isDark && styles.emptyTextDark]}>
@@ -72,6 +76,18 @@ export default function ConversationsScreen() {
           conversations.length === 0 ? styles.emptyListContainer : undefined
         }
       />
+
+      {/* Floating Action Button */}
+      <Pressable
+        style={({ pressed }) => [
+          styles.fab,
+          isDark && styles.fabDark,
+          pressed && styles.fabPressed,
+        ]}
+        onPress={handleNewConversation}
+      >
+        <Text style={styles.fabIcon}>✎</Text>
+      </Pressable>
     </View>
   );
 }
@@ -109,5 +125,33 @@ const styles = StyleSheet.create({
   },
   emptySubtextDark: {
     color: '#8E8E93',
+  },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  fabDark: {
+    backgroundColor: '#0A84FF',
+  },
+  fabPressed: {
+    opacity: 0.8,
+    transform: [{ scale: 0.95 }],
+  },
+  fabIcon: {
+    fontSize: 24,
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
 });

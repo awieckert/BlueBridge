@@ -1,18 +1,23 @@
+import { SenderType } from './message';
+
 export interface SendMessageRequest {
-  phoneNumber: string;
+  sender: string;
+  senderType: SenderType;
   message: string;
   timestamp: number;
 }
 
 export interface SendMessageResponse {
   success: boolean;
-  messageId?: string;
+  messageId?: number;
   error?: string;
 }
 
 export interface ReceiveMessagePayload {
-  id: string;
-  phoneNumber: string;
+  id: number;
+  conversationId: string;
+  sender: string;
+  senderType: SenderType;
   message: string;
   timestamp: number;
 }

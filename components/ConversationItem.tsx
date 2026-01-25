@@ -1,12 +1,17 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { Conversation } from '@/types/message';
+import { Conversation, SenderType } from '@/types/message';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { formatPhoneNumber } from '@/utils/phoneNumber';
 
 interface ConversationItemProps {
   conversation: Conversation;
   onPress: () => void;
 }
+
+const formatSender = (sender: string, senderType: SenderType): string => {
+  return senderType === 'phone' ? formatPhoneNumber(sender) : sender;
+};
 
 export function ConversationItem({ conversation, onPress }: ConversationItemProps) {
   const colorScheme = useColorScheme();
@@ -31,6 +36,12 @@ export function ConversationItem({ conversation, onPress }: ConversationItemProp
     }
   };
 
+  // Determine display name: contact name if available, otherwise formatted sender
+  const displayName = conversation.contactName || formatSender(conversation.sender, conversation.senderType);
+  const avatarLetter = conversation.contactName
+    ? conversation.contactName.charAt(0).toUpperCase()
+    : conversation.sender.charAt(0).toUpperCase();
+
   return (
     <Pressable
       style={({ pressed }) => [
@@ -43,7 +54,7 @@ export function ConversationItem({ conversation, onPress }: ConversationItemProp
       <View style={styles.avatarContainer}>
         <View style={[styles.avatar, isDark && styles.avatarDark]}>
           <Text style={styles.avatarText}>
-            {conversation.phoneNumber.charAt(0)}
+            {avatarLetter}
           </Text>
         </View>
       </View>
@@ -54,7 +65,7 @@ export function ConversationItem({ conversation, onPress }: ConversationItemProp
             style={[styles.phoneNumber, isDark && styles.phoneNumberDark]}
             numberOfLines={1}
           >
-            {conversation.phoneNumber}
+            {displayName}
           </Text>
           <Text style={[styles.timestamp, isDark && styles.timestampDark]}>
             {formatTimestamp(conversation.lastMessageTimestamp)}

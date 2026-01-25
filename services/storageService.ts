@@ -1,29 +1,30 @@
 import { getDatabase } from '../utils/database';
-import { Message, Conversation, QueuedMessage } from '../types/message';
+import { Message, Conversation, QueuedMessage, SenderType } from '../types/message';
 import { v4 as uuidv4 } from 'uuid';
 
 export class StorageService {
   // Messages
-  async saveMessage(message: Message): Promise<void> {
+  async saveMessage(message: Omit<Message, 'id'>): Promise<number> {
     const db = await getDatabase();
-    await db.runAsync(
-      `INSERT OR REPLACE INTO messages
-       (id, conversation_id, phone_number, content, timestamp, direction, status, created_at)
+    const result = await db.runAsync(
+      `INSERT INTO messages
+       (conversation_id, sender, sender_type, message, timestamp, direction, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        message.id,
         message.conversationId,
-        message.phoneNumber,
-        message.content,
+        message.sender,
+        message.senderType,
+        message.message,
         message.timestamp,
         message.direction,
         message.status,
         message.createdAt,
       ]
     );
+    return result.lastInsertRowId;
   }
 
-  async updateMessageStatus(messageId: string, status: Message['status']): Promise<void> {
+  async updateMessageStatus(messageId: number, status: Message['status']): Promise<void> {
     const db = await getDatabase();
     await db.runAsync(
       'UPDATE messages SET status = ? WHERE id = ?',
@@ -34,10 +35,11 @@ export class StorageService {
   async getMessagesByConversation(conversationId: string): Promise<Message[]> {
     const db = await getDatabase();
     const rows = await db.getAllAsync<{
-      id: string;
+      id: number;
       conversation_id: string;
-      phone_number: string;
-      content: string;
+      sender: string;
+      sender_type: string;
+      message: string;
       timestamp: number;
       direction: string;
       status: string;
@@ -50,8 +52,9 @@ export class StorageService {
     return rows.map((row) => ({
       id: row.id,
       conversationId: row.conversation_id,
-      phoneNumber: row.phone_number,
-      content: row.content,
+      sender: row.sender,
+      senderType: row.sender_type as SenderType,
+      message: row.message,
       timestamp: row.timestamp,
       direction: row.direction as Message['direction'],
       status: row.status as Message['status'],
@@ -62,10 +65,11 @@ export class StorageService {
   async getAllMessages(): Promise<Message[]> {
     const db = await getDatabase();
     const rows = await db.getAllAsync<{
-      id: string;
+      id: number;
       conversation_id: string;
-      phone_number: string;
-      content: string;
+      sender: string;
+      sender_type: string;
+      message: string;
       timestamp: number;
       direction: string;
       status: string;
@@ -75,8 +79,9 @@ export class StorageService {
     return rows.map((row) => ({
       id: row.id,
       conversationId: row.conversation_id,
-      phoneNumber: row.phone_number,
-      content: row.content,
+      sender: row.sender,
+      senderType: row.sender_type as SenderType,
+      message: row.message,
       timestamp: row.timestamp,
       direction: row.direction as Message['direction'],
       status: row.status as Message['status'],
@@ -89,11 +94,13 @@ export class StorageService {
     const db = await getDatabase();
     await db.runAsync(
       `INSERT OR REPLACE INTO conversations
-       (id, phone_number, last_message_preview, last_message_timestamp, unread_count, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       (id, sender, sender_type, contact_name, last_message_preview, last_message_timestamp, unread_count, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         conversation.id,
-        conversation.phoneNumber,
+        conversation.sender,
+        conversation.senderType,
+        conversation.contactName,
         conversation.lastMessagePreview,
         conversation.lastMessageTimestamp,
         conversation.unreadCount,
@@ -111,6 +118,10 @@ export class StorageService {
     const fields: string[] = [];
     const values: any[] = [];
 
+    if (updates.contactName !== undefined) {
+      fields.push('contact_name = ?');
+      values.push(updates.contactName);
+    }
     if (updates.lastMessagePreview !== undefined) {
       fields.push('last_message_preview = ?');
       values.push(updates.lastMessagePreview);
@@ -136,11 +147,25 @@ export class StorageService {
     }
   }
 
+  async updateConversationContactName(conversationId: string, contactName: string | null): Promise<void> {
+    await this.updateConversation(conversationId, { contactName });
+  }
+
+  async updateConversationContactNameBySender(sender: string, senderType: SenderType, contactName: string | null): Promise<void> {
+    const db = await getDatabase();
+    await db.runAsync(
+      'UPDATE conversations SET contact_name = ?, updated_at = ? WHERE sender = ? AND sender_type = ?',
+      [contactName, Date.now(), sender, senderType]
+    );
+  }
+
   async getConversation(conversationId: string): Promise<Conversation | null> {
     const db = await getDatabase();
     const row = await db.getFirstAsync<{
       id: string;
-      phone_number: string;
+      sender: string;
+      sender_type: string;
+      contact_name: string | null;
       last_message_preview: string | null;
       last_message_timestamp: number | null;
       unread_count: number;
@@ -152,7 +177,9 @@ export class StorageService {
 
     return {
       id: row.id,
-      phoneNumber: row.phone_number,
+      sender: row.sender,
+      senderType: row.sender_type as SenderType,
+      contactName: row.contact_name,
       lastMessagePreview: row.last_message_preview,
       lastMessageTimestamp: row.last_message_timestamp,
       unreadCount: row.unread_count,
@@ -161,23 +188,27 @@ export class StorageService {
     };
   }
 
-  async getConversationByPhoneNumber(phoneNumber: string): Promise<Conversation | null> {
+  async getConversationBySender(sender: string, senderType: SenderType): Promise<Conversation | null> {
     const db = await getDatabase();
     const row = await db.getFirstAsync<{
       id: string;
-      phone_number: string;
+      sender: string;
+      sender_type: string;
+      contact_name: string | null;
       last_message_preview: string | null;
       last_message_timestamp: number | null;
       unread_count: number;
       created_at: number;
       updated_at: number;
-    }>('SELECT * FROM conversations WHERE phone_number = ?', [phoneNumber]);
+    }>('SELECT * FROM conversations WHERE sender = ? AND sender_type = ?', [sender, senderType]);
 
     if (!row) return null;
 
     return {
       id: row.id,
-      phoneNumber: row.phone_number,
+      sender: row.sender,
+      senderType: row.sender_type as SenderType,
+      contactName: row.contact_name,
       lastMessagePreview: row.last_message_preview,
       lastMessageTimestamp: row.last_message_timestamp,
       unreadCount: row.unread_count,
@@ -190,7 +221,9 @@ export class StorageService {
     const db = await getDatabase();
     const rows = await db.getAllAsync<{
       id: string;
-      phone_number: string;
+      sender: string;
+      sender_type: string;
+      contact_name: string | null;
       last_message_preview: string | null;
       last_message_timestamp: number | null;
       unread_count: number;
@@ -200,7 +233,9 @@ export class StorageService {
 
     return rows.map((row) => ({
       id: row.id,
-      phoneNumber: row.phone_number,
+      sender: row.sender,
+      senderType: row.sender_type as SenderType,
+      contactName: row.contact_name,
       lastMessagePreview: row.last_message_preview,
       lastMessageTimestamp: row.last_message_timestamp,
       unreadCount: row.unread_count,
@@ -209,14 +244,16 @@ export class StorageService {
     }));
   }
 
-  async getOrCreateConversation(phoneNumber: string): Promise<Conversation> {
-    let conversation = await this.getConversationByPhoneNumber(phoneNumber);
+  async getOrCreateConversation(sender: string, senderType: SenderType, contactName: string | null = null): Promise<Conversation> {
+    let conversation = await this.getConversationBySender(sender, senderType);
 
     if (!conversation) {
       const now = Date.now();
       conversation = {
         id: uuidv4(),
-        phoneNumber,
+        sender,
+        senderType,
+        contactName,
         lastMessagePreview: null,
         lastMessageTimestamp: null,
         unreadCount: 0,
@@ -234,13 +271,14 @@ export class StorageService {
     const db = await getDatabase();
     await db.runAsync(
       `INSERT OR REPLACE INTO queue
-       (id, message_id, phone_number, content, timestamp, retry_count, next_retry_at, error, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, message_id, sender, sender_type, message, timestamp, retry_count, next_retry_at, error, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         queuedMessage.id,
         queuedMessage.messageId,
-        queuedMessage.phoneNumber,
-        queuedMessage.content,
+        queuedMessage.sender,
+        queuedMessage.senderType,
+        queuedMessage.message,
         queuedMessage.timestamp,
         queuedMessage.retryCount,
         queuedMessage.nextRetryAt,
@@ -280,7 +318,7 @@ export class StorageService {
     }
   }
 
-  async removeFromQueue(messageId: string): Promise<void> {
+  async removeFromQueue(messageId: number): Promise<void> {
     const db = await getDatabase();
     await db.runAsync('DELETE FROM queue WHERE message_id = ?', [messageId]);
   }
@@ -289,9 +327,10 @@ export class StorageService {
     const db = await getDatabase();
     const rows = await db.getAllAsync<{
       id: string;
-      message_id: string;
-      phone_number: string;
-      content: string;
+      message_id: number;
+      sender: string;
+      sender_type: string;
+      message: string;
       timestamp: number;
       retry_count: number;
       next_retry_at: number | null;
@@ -302,8 +341,9 @@ export class StorageService {
     return rows.map((row) => ({
       id: row.id,
       messageId: row.message_id,
-      phoneNumber: row.phone_number,
-      content: row.content,
+      sender: row.sender,
+      senderType: row.sender_type as SenderType,
+      message: row.message,
       timestamp: row.timestamp,
       retryCount: row.retry_count,
       nextRetryAt: row.next_retry_at,

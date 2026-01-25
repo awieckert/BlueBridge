@@ -15,9 +15,13 @@ import { MessageBubble } from '@/components/MessageBubble';
 import { MessageInput } from '@/components/MessageInput';
 import { ScrollToBottomButton } from '@/components/ScrollToBottomButton';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { v4 as uuidv4 } from 'uuid';
-import type { Message } from '@/types/message';
+import { formatPhoneNumber } from '@/utils/phoneNumber';
+import type { Message, SenderType } from '@/types/message';
 import type { ApiError } from '@/types/api';
+
+const formatSender = (sender: string, senderType: SenderType): string => {
+  return senderType === 'phone' ? formatPhoneNumber(sender) : sender;
+};
 
 export default function ChatScreen() {
   const params = useLocalSearchParams<{ conversationId: string }>();
@@ -60,16 +64,20 @@ export default function ChatScreen() {
     }
   };
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (messageContent: string) => {
     if (!conversation) return;
 
     const now = Date.now();
-    const messageId = uuidv4();
-    const message: Message = {
-      id: messageId,
+    // Create temporary negative ID for optimistic UI
+    const tempId = -Date.now();
+
+    // Create optimistic message with temporary ID
+    const optimisticMessage: Message = {
+      id: tempId,
       conversationId: params.conversationId,
-      phoneNumber: conversation.phoneNumber,
-      content,
+      sender: conversation.sender,
+      senderType: conversation.senderType,
+      message: messageContent,
       timestamp: now,
       direction: 'outgoing',
       status: 'sent',
@@ -77,17 +85,8 @@ export default function ChatScreen() {
     };
 
     try {
-      // Add to store (optimistic UI)
-      addMessage(message);
-
-      // Save to database
-      await storageService.saveMessage(message);
-
-      // Update conversation
-      await storageService.updateConversation(params.conversationId, {
-        lastMessagePreview: content,
-        lastMessageTimestamp: now,
-      });
+      // Add to store immediately (optimistic UI)
+      addMessage(optimisticMessage);
 
       // Scroll to bottom after sending
       setTimeout(() => {
@@ -97,10 +96,35 @@ export default function ChatScreen() {
       // Send via messageService
       try {
         const response = await messageService.sendMessage(
-          conversation.phoneNumber,
-          content,
+          conversation.sender,
+          conversation.senderType,
+          messageContent,
           now
         );
+
+        // Save to database (gets real ID from AUTOINCREMENT)
+        const realId = await storageService.saveMessage({
+          conversationId: params.conversationId,
+          sender: conversation.sender,
+          senderType: conversation.senderType,
+          message: messageContent,
+          timestamp: now,
+          direction: 'outgoing',
+          status: 'delivered',
+          createdAt: now,
+        });
+
+        // Update conversation
+        await storageService.updateConversation(params.conversationId, {
+          lastMessagePreview: messageContent,
+          lastMessageTimestamp: now,
+        });
+
+        // Update optimistic message with real ID and status
+        useMessagesStore.getState().updateMessage(tempId, {
+          id: realId,
+          status: 'delivered'
+        });
 
         console.log('Message sent successfully:', response);
       } catch (apiError) {
@@ -109,9 +133,22 @@ export default function ChatScreen() {
         console.error('Failed to send message via API:', error.message);
 
         // Update message status to failed
-        const updatedMessage = { ...message, status: 'failed' as const };
-        useMessagesStore.getState().updateMessage(messageId, { status: 'failed' });
-        await storageService.updateMessageStatus(messageId, 'failed');
+        useMessagesStore.getState().updateMessage(tempId, { status: 'failed' });
+
+        // Save failed message to database
+        const realId = await storageService.saveMessage({
+          conversationId: params.conversationId,
+          sender: conversation.sender,
+          senderType: conversation.senderType,
+          message: messageContent,
+          timestamp: now,
+          direction: 'outgoing',
+          status: 'failed',
+          createdAt: now,
+        });
+
+        // Update with real ID
+        useMessagesStore.getState().updateMessage(tempId, { id: realId });
 
         // TODO: Phase 4 - Queue message for retry
       }
@@ -146,6 +183,11 @@ export default function ChatScreen() {
     </View>
   );
 
+  // Determine header title: contact name if available, otherwise formatted sender
+  const headerTitle = conversation
+    ? conversation.contactName || formatSender(conversation.sender, conversation.senderType)
+    : 'Chat';
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -154,7 +196,7 @@ export default function ChatScreen() {
     >
       <Stack.Screen
         options={{
-          title: conversation?.phoneNumber || 'Chat',
+          title: headerTitle,
           headerBackTitle: 'Back',
         }}
       />
@@ -163,7 +205,7 @@ export default function ChatScreen() {
         <FlatList
           ref={flatListRef}
           data={conversationMessages}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item.id.toString()}
           renderItem={renderMessage}
           ListEmptyComponent={renderEmptyState}
           contentContainerStyle={

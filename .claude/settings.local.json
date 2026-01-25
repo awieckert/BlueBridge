@@ -11,7 +11,21 @@
       "Bash(npm cache clean:*)",
       "Bash(find:*)",
       "Bash(ls:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npx expo start:*)",
+      "Bash(node:*)",
+      "Bash(npm cache:*)",
+      "Bash(npm view:*)",
+      "Bash(adb devices:*)",
+      "Bash(npx expo:*)",
+      "Bash(adb logcat:*)",
+      "Bash(adb shell:*)",
+      "Bash(npm ls:*)",
+      "Bash(timeout 10 tail:*)",
+      "Bash(taskkill /F /PID 20820)",
+      "Bash(taskkill //F //PID 20820)",
+      "Bash(taskkill:*)",
+      "Bash(adb reverse:*)"
     ]
   }
 }

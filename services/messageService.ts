@@ -1,4 +1,5 @@
 import { SendMessageRequest, SendMessageResponse, ApiError } from '../types/api';
+import { SenderType } from '../types/message';
 import { useAuthStore } from '../stores/authStore';
 
 export class MessageService {
@@ -10,7 +11,8 @@ export class MessageService {
   }
 
   async sendMessage(
-    phoneNumber: string,
+    sender: string,
+    senderType: SenderType,
     message: string,
     timestamp: number
   ): Promise<SendMessageResponse> {
@@ -22,7 +24,8 @@ export class MessageService {
 
     const endpoint = `${serverUrl}/api/messages/send`;
     const payload: SendMessageRequest = {
-      phoneNumber,
+      sender,
+      senderType,
       message,
       timestamp,
     };
