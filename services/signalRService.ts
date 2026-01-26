@@ -1,13 +1,14 @@
 import * as signalR from '@microsoft/signalr';
 import { HubConnection, HubConnectionState } from '@microsoft/signalr';
 import { ReceiveMessagePayload } from '../types/api';
-import { Message } from '../types/message';
+import { Message, SenderType } from '../types/message';
 import { useAuthStore } from '../stores/authStore';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useContactStore } from '../stores/contactStore';
 import { storageService } from './storageService';
 import { useMessagesStore } from '../stores/messagesStore';
 import { getDatabase } from '../utils/database';
+import { SenderTypeEnum } from '../utils/senderTypeEnum';
 
 export class SignalRService {
   private connection: HubConnection | null = null;
@@ -150,37 +151,73 @@ export class SignalRService {
   private async handleIncomingMessage(payload: ReceiveMessagePayload): Promise<void> {
     try {
       // Validate required fields
-      if (!payload.sender || !payload.senderType || !payload.id || !payload.message) {
-        console.error('[SignalR] Invalid message payload - missing required fields:', payload);
+      if (!payload.sender || payload.senderType === undefined || !payload.id || !payload.message || !payload.conversationId) {
+        console.error('[SignalR] Invalid message payload - missing required fields');
+        console.error('[SignalR] Payload:', JSON.stringify(payload));
         return;
       }
 
-      // Lookup contact name
-      const contactName = payload.senderType === 'phone'
+      // Validate senderType is 0 or 1
+      if (payload.senderType !== SenderTypeEnum.Phone && payload.senderType !== SenderTypeEnum.Email) {
+        console.error('[SignalR] Invalid senderType:', payload.senderType);
+        console.error('[SignalR] Full payload:', JSON.stringify(payload));
+        return;
+      }
+
+      // Lookup contact name (only for phone numbers)
+      const contactName = payload.senderType === SenderTypeEnum.Phone
         ? useContactStore.getState().getNameByPhoneNumber(payload.sender)
-        : null; // TODO: Add email contact lookup when implemented
+        : null;
 
-      // Get or create conversation for this sender
-      const conversation = await storageService.getOrCreateConversation(
-        payload.sender,
-        payload.senderType,
-        contactName
-      );
+      // Try to get conversation by backend conversationId first
+      let conversation = await storageService.getConversation(payload.conversationId);
 
-      // If conversation already exists but doesn't have contact name, update it
-      if (!conversation.contactName && contactName) {
-        await storageService.updateConversationContactNameBySender(
+      if (!conversation) {
+        // Check if conversation exists by sender (might be temp ID in store)
+        const existingBySender = await storageService.getConversationBySender(
           payload.sender,
-          payload.senderType,
-          contactName
+          payload.senderType
         );
+
+        if (existingBySender) {
+          // Found existing conversation - should not happen if conversationIds match
+          console.warn('[SignalR] Found conversation by sender but not by conversationId:', {
+            existingId: existingBySender.id,
+            payloadId: payload.conversationId
+          });
+          conversation = existingBySender;
+        } else {
+          // Create new conversation with backend conversationId
+          const now = Date.now();
+          conversation = {
+            id: payload.conversationId,
+            sender: payload.sender,
+            senderType: payload.senderType,
+            contactName,
+            lastMessagePreview: null,
+            lastMessageTimestamp: null,
+            unreadCount: 0,
+            createdAt: now,
+            updatedAt: now,
+          };
+          await storageService.saveConversation(conversation);
+
+          // Add to Zustand store
+          const store = useMessagesStore.getState();
+          store.loadConversations([...store.conversations, conversation]);
+        }
+      }
+
+      // Update contact name if needed
+      if (!conversation.contactName && contactName) {
+        await storageService.updateConversation(conversation.id, { contactName });
         conversation.contactName = contactName;
       }
 
-      // Create message object with backend-provided ID
+      // Create message object with backend conversationId
       const message: Message = {
         id: payload.id,
-        conversationId: payload.conversationId || conversation.id,
+        conversationId: payload.conversationId,
         sender: payload.sender,
         senderType: payload.senderType,
         message: payload.message,
@@ -237,6 +274,7 @@ export class SignalRService {
       console.log('[SignalR] Message saved and UI updated');
     } catch (error) {
       console.error('[SignalR] Error handling incoming message:', error);
+      console.error('[SignalR] Failed payload:', JSON.stringify(payload));
     }
   }
 

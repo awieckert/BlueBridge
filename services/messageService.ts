@@ -11,7 +11,7 @@ export class MessageService {
   }
 
   async sendMessage(
-    sender: string,
+    recipient: string,
     senderType: SenderType,
     message: string,
     timestamp: number
@@ -24,7 +24,7 @@ export class MessageService {
 
     const endpoint = `${serverUrl}/api/messages/send`;
     const payload: SendMessageRequest = {
-      sender,
+      recipient,
       senderType,
       message,
       timestamp,
@@ -44,6 +44,7 @@ export class MessageService {
       const data = await response.json();
       return {
         success: true,
+        conversationId: data.conversationId,
         messageId: data.messageId,
       };
     } catch (error) {

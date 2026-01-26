@@ -6,6 +6,7 @@ export interface Contact {
   name: string;
   phoneNumbers: string[]; // Normalized E.164 format
   rawPhoneNumbers: string[]; // Original format from device
+  emails: string[]; // Email addresses
 }
 
 interface ContactCache {
@@ -77,41 +78,49 @@ export async function fetchContacts(forceRefresh: boolean = false): Promise<Cont
       return [];
     }
 
-    // Fetch contacts with phone numbers
+    // Fetch contacts with phone numbers and emails
     const { data } = await Contacts.getContactsAsync({
-      fields: [Contacts.Fields.PhoneNumbers],
+      fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Emails],
     });
 
     // Filter and transform contacts
     const contacts: Contact[] = [];
 
     for (const contact of data) {
-      // Skip contacts without phone numbers
-      if (!contact.phoneNumbers || contact.phoneNumbers.length === 0) {
-        continue;
-      }
-
       // Extract phone numbers and normalize them
       const phoneNumbers: string[] = [];
       const rawPhoneNumbers: string[] = [];
 
-      for (const phoneEntry of contact.phoneNumbers) {
-        if (phoneEntry.number) {
-          const normalized = normalizePhoneNumber(phoneEntry.number);
-          if (normalized) {
-            phoneNumbers.push(normalized);
-            rawPhoneNumbers.push(phoneEntry.number);
+      if (contact.phoneNumbers && contact.phoneNumbers.length > 0) {
+        for (const phoneEntry of contact.phoneNumbers) {
+          if (phoneEntry.number) {
+            const normalized = normalizePhoneNumber(phoneEntry.number);
+            if (normalized) {
+              phoneNumbers.push(normalized);
+              rawPhoneNumbers.push(phoneEntry.number);
+            }
           }
         }
       }
 
-      // Only include contacts with at least one valid phone number
-      if (phoneNumbers.length > 0) {
+      // Extract email addresses
+      const emails: string[] = [];
+      if (contact.emails && contact.emails.length > 0) {
+        for (const emailEntry of contact.emails) {
+          if (emailEntry.email) {
+            emails.push(emailEntry.email.trim().toLowerCase());
+          }
+        }
+      }
+
+      // Only include contacts with at least one phone number or email
+      if (phoneNumbers.length > 0 || emails.length > 0) {
         contacts.push({
           id: contact.id || `contact-${Date.now()}-${Math.random()}`,
           name: contact.name || 'Unknown',
           phoneNumbers,
           rawPhoneNumbers,
+          emails,
         });
       }
     }
@@ -181,6 +190,13 @@ export function searchContacts(query: string): Contact[] {
     // Search in phone numbers (both normalized and raw)
     for (const phone of [...contact.phoneNumbers, ...contact.rawPhoneNumbers]) {
       if (phone.includes(lowerQuery) || phone.replace(/\D/g, '').includes(lowerQuery)) {
+        return true;
+      }
+    }
+
+    // Search in emails
+    for (const email of contact.emails) {
+      if (email.toLowerCase().includes(lowerQuery)) {
         return true;
       }
     }

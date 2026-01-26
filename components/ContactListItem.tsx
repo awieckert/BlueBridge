@@ -17,10 +17,14 @@ export function ContactListItem({ contact, onPress, searchQuery }: ContactListIt
   // Get the first letter of the contact name for the avatar
   const avatarLetter = contact.name.charAt(0).toUpperCase();
 
-  // Format the first phone number for display
-  const displayPhone = contact.rawPhoneNumbers.length > 0
+  // Format the first phone number or email for display
+  const displayContact = contact.rawPhoneNumbers.length > 0
     ? formatPhoneNumber(contact.rawPhoneNumbers[0])
-    : contact.phoneNumbers[0] || '';
+    : contact.phoneNumbers.length > 0
+    ? contact.phoneNumbers[0]
+    : contact.emails.length > 0
+    ? contact.emails[0]
+    : '';
 
   return (
     <Pressable
@@ -48,14 +52,14 @@ export function ContactListItem({ contact, onPress, searchQuery }: ContactListIt
           style={[styles.phoneNumber, isDark && styles.phoneNumberDark]}
           numberOfLines={1}
         >
-          {displayPhone}
+          {displayContact}
         </Text>
-        {contact.phoneNumbers.length > 1 && (
+        {(contact.phoneNumbers.length + contact.emails.length > 1) && (
           <Text
             style={[styles.additionalInfo, isDark && styles.additionalInfoDark]}
             numberOfLines={1}
           >
-            +{contact.phoneNumbers.length - 1} more
+            +{contact.phoneNumbers.length + contact.emails.length - 1} more
           </Text>
         )}
       </View>

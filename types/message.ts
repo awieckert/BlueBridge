@@ -1,6 +1,6 @@
 export type MessageDirection = 'incoming' | 'outgoing';
 export type MessageStatus = 'sent' | 'queued' | 'failed' | 'delivered';
-export type SenderType = 'phone' | 'email';
+export type SenderType = 0 | 1; // 0 = phone, 1 = email
 
 export interface Message {
   id: number;

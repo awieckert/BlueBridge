@@ -17,9 +17,11 @@ import { useMessagesStore } from '@/stores/messagesStore';
 import { ContactListItem } from '@/components/ContactListItem';
 import { ConversationItem } from '@/components/ConversationItem';
 import { Contact } from '@/services/contactService';
-import { Conversation } from '@/types/message';
+import { Conversation, SenderType } from '@/types/message';
 import { normalizePhoneNumber, validatePhoneNumber, formatPhoneNumber } from '@/utils/phoneNumber';
 import { storageService } from '@/services/storageService';
+import { SenderTypeEnum } from '@/utils/senderTypeEnum';
+import { v4 as uuidv4 } from 'uuid';
 
 export default function NewConversationScreen() {
   const router = useRouter();
@@ -39,7 +41,9 @@ export default function NewConversationScreen() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showManualEntry, setShowManualEntry] = useState(false);
-  const [manualPhoneNumber, setManualPhoneNumber] = useState('');
+  const [manualContact, setManualContact] = useState('');
+  const [showContactMethodPicker, setShowContactMethodPicker] = useState(false);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
 
   // Request permission and load contacts on mount
   useEffect(() => {
@@ -87,23 +91,92 @@ export default function NewConversationScreen() {
   // Handle contact selection
   const handleContactPress = async (contact: Contact) => {
     try {
-      // Use the first phone number
-      const phoneNumber = contact.phoneNumbers[0];
+      const hasPhone = contact.phoneNumbers.length > 0;
+      const hasEmail = contact.emails.length > 0;
 
-      // Check if conversation already exists
-      const existing = await storageService.getConversationBySender(phoneNumber, 'phone');
-
-      if (existing) {
-        // Navigate to existing conversation
-        router.push(`/chat/${existing.id}`);
-      } else {
-        // Create new conversation with contact name
-        const conversation = await storageService.getOrCreateConversation(phoneNumber, 'phone', contact.name);
-        router.push(`/chat/${conversation.id}`);
+      // If contact has both phone and email, show picker
+      if (hasPhone && hasEmail) {
+        setSelectedContact(contact);
+        setShowContactMethodPicker(true);
+        return;
       }
+
+      // Otherwise, use whichever is available
+      let sender: string;
+      let type: SenderType;
+
+      if (hasPhone) {
+        sender = contact.phoneNumbers[0];
+        type = SenderTypeEnum.Phone;
+      } else if (hasEmail) {
+        sender = contact.emails[0];
+        type = SenderTypeEnum.Email;
+      } else {
+        Alert.alert('Error', 'This contact has no phone number or email address.');
+        return;
+      }
+
+      await createConversationAndNavigate(sender, type, contact.name);
     } catch (error) {
       console.error('Error creating conversation from contact:', error);
       Alert.alert('Error', 'Failed to create conversation. Please try again.');
+    }
+  };
+
+  // Handle contact method selection
+  const handleContactMethodSelect = async (method: SenderType) => {
+    if (!selectedContact) return;
+
+    try {
+      const sender = method === SenderTypeEnum.Phone
+        ? selectedContact.phoneNumbers[0]
+        : selectedContact.emails[0];
+
+      setShowContactMethodPicker(false);
+      setSelectedContact(null);
+
+      await createConversationAndNavigate(sender, method, selectedContact.name);
+    } catch (error) {
+      console.error('Error creating conversation from contact method:', error);
+      Alert.alert('Error', 'Failed to create conversation. Please try again.');
+    }
+  };
+
+  // Helper function to create conversation and navigate
+  const createConversationAndNavigate = async (
+    sender: string,
+    type: SenderType,
+    contactName: string | null
+  ) => {
+    // Check if conversation already exists in DATABASE
+    const existing = await storageService.getConversationBySender(sender, type);
+
+    if (existing) {
+      // Navigate to existing conversation (has real ID from server)
+      router.push(`/chat/${existing.id}`);
+    } else {
+      // Create temporary in-memory conversation for UI navigation
+      const tempId = uuidv4();
+      const now = Date.now();
+
+      const tempConversation: Conversation = {
+        id: tempId,
+        sender,
+        senderType: type,
+        contactName,
+        lastMessagePreview: null,
+        lastMessageTimestamp: null,
+        unreadCount: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      // Add to Zustand store ONLY (not database)
+      const store = useMessagesStore.getState();
+      store.loadConversations([...store.conversations, tempConversation]);
+
+      // Navigate to chat screen with temp UUID
+      router.push(`/chat/${tempId}`);
     }
   };
 
@@ -112,44 +185,52 @@ export default function NewConversationScreen() {
     router.push(`/chat/${conversation.id}`);
   };
 
-  // Handle manual phone number entry
-  const handleManualPhoneNumberSubmit = async () => {
-    const trimmed = manualPhoneNumber.trim();
+  // Validate email address
+  const validateEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  // Handle manual contact entry (phone or email)
+  const handleManualContactSubmit = async () => {
+    const trimmed = manualContact.trim();
 
     if (!trimmed) {
-      Alert.alert('Invalid Input', 'Please enter a phone number.');
+      Alert.alert('Invalid Input', 'Please enter a phone number or email address.');
       return;
     }
 
-    // Validate phone number
-    if (!validatePhoneNumber(trimmed)) {
-      Alert.alert('Invalid Phone Number', 'Please enter a valid phone number.');
-      return;
-    }
+    let sender: string;
+    let type: SenderType;
 
-    // Normalize phone number
-    const normalized = normalizePhoneNumber(trimmed);
-    if (!normalized) {
-      Alert.alert('Invalid Phone Number', 'Unable to parse phone number. Please check the format.');
-      return;
+    // Check if it's an email address
+    if (trimmed.includes('@')) {
+      if (!validateEmail(trimmed)) {
+        Alert.alert('Invalid Email', 'Please enter a valid email address.');
+        return;
+      }
+      sender = trimmed.toLowerCase();
+      type = SenderTypeEnum.Email;
+    } else {
+      // Treat as phone number
+      if (!validatePhoneNumber(trimmed)) {
+        Alert.alert('Invalid Phone Number', 'Please enter a valid phone number.');
+        return;
+      }
+
+      const normalized = normalizePhoneNumber(trimmed);
+      if (!normalized) {
+        Alert.alert('Invalid Phone Number', 'Unable to parse phone number. Please check the format.');
+        return;
+      }
+      sender = normalized;
+      type = SenderTypeEnum.Phone;
     }
 
     try {
-      // Check if conversation already exists
-      const existing = await storageService.getConversationBySender(normalized, 'phone');
-
-      if (existing) {
-        // Navigate to existing conversation
-        setShowManualEntry(false);
-        setManualPhoneNumber('');
-        router.push(`/chat/${existing.id}`);
-      } else {
-        // Create new conversation
-        const conversation = await storageService.getOrCreateConversation(normalized, 'phone', null);
-        setShowManualEntry(false);
-        setManualPhoneNumber('');
-        router.push(`/chat/${conversation.id}`);
-      }
+      setShowManualEntry(false);
+      setManualContact('');
+      await createConversationAndNavigate(sender, type, null);
     } catch (error) {
       console.error('Error creating conversation from manual entry:', error);
       Alert.alert('Error', 'Failed to create conversation. Please try again.');
@@ -263,7 +344,7 @@ export default function NewConversationScreen() {
           style={[styles.manualEntryButton, isDark && styles.manualEntryButtonDark]}
           onPress={() => setShowManualEntry(true)}
         >
-          <Text style={styles.manualEntryButtonText}>Enter Phone Number Manually</Text>
+          <Text style={styles.manualEntryButtonText}>Enter Contact Manually</Text>
         </Pressable>
       </View>
 
@@ -283,15 +364,17 @@ export default function NewConversationScreen() {
             onPress={(e) => e.stopPropagation()}
           >
             <Text style={[styles.modalTitle, isDark && styles.modalTitleDark]}>
-              Enter Phone Number
+              Enter Phone Number or Email
             </Text>
             <TextInput
               style={[styles.modalInput, isDark && styles.modalInputDark]}
-              placeholder="+1 (234) 567-8900"
+              placeholder="+1 (234) 567-8900 or email@example.com"
               placeholderTextColor={isDark ? '#8E8E93' : '#8E8E93'}
-              value={manualPhoneNumber}
-              onChangeText={setManualPhoneNumber}
-              keyboardType="phone-pad"
+              value={manualContact}
+              onChangeText={setManualContact}
+              keyboardType="default"
+              autoCapitalize="none"
+              autoCorrect={false}
               autoFocus
             />
             <View style={styles.modalButtons}>
@@ -299,7 +382,7 @@ export default function NewConversationScreen() {
                 style={[styles.modalButton, styles.modalButtonCancel]}
                 onPress={() => {
                   setShowManualEntry(false);
-                  setManualPhoneNumber('');
+                  setManualContact('');
                 }}
               >
                 <Text style={styles.modalButtonCancelText}>Cancel</Text>
@@ -310,11 +393,89 @@ export default function NewConversationScreen() {
                   styles.modalButtonSubmit,
                   isDark && styles.modalButtonSubmitDark,
                 ]}
-                onPress={handleManualPhoneNumberSubmit}
+                onPress={handleManualContactSubmit}
               >
                 <Text style={styles.modalButtonSubmitText}>Start Chat</Text>
               </Pressable>
             </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Contact Method Picker Modal */}
+      <Modal
+        visible={showContactMethodPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowContactMethodPicker(false);
+          setSelectedContact(null);
+        }}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => {
+            setShowContactMethodPicker(false);
+            setSelectedContact(null);
+          }}
+        >
+          <Pressable
+            style={[styles.modalContent, isDark && styles.modalContentDark]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={[styles.modalTitle, isDark && styles.modalTitleDark]}>
+              Choose Contact Method
+            </Text>
+            {selectedContact && (
+              <>
+                <Text style={[styles.contactPickerName, isDark && styles.contactPickerNameDark]}>
+                  {selectedContact.name}
+                </Text>
+                <View style={styles.contactMethodButtons}>
+                  {selectedContact.phoneNumbers.length > 0 && (
+                    <Pressable
+                      style={[
+                        styles.contactMethodButton,
+                        isDark && styles.contactMethodButtonDark,
+                      ]}
+                      onPress={() => handleContactMethodSelect(SenderTypeEnum.Phone)}
+                    >
+                      <Text style={[styles.contactMethodLabel, isDark && styles.contactMethodLabelDark]}>
+                        Phone
+                      </Text>
+                      <Text style={[styles.contactMethodValue, isDark && styles.contactMethodValueDark]}>
+                        {formatPhoneNumber(selectedContact.rawPhoneNumbers[0])}
+                      </Text>
+                    </Pressable>
+                  )}
+                  {selectedContact.emails.length > 0 && (
+                    <Pressable
+                      style={[
+                        styles.contactMethodButton,
+                        isDark && styles.contactMethodButtonDark,
+                      ]}
+                      onPress={() => handleContactMethodSelect(SenderTypeEnum.Email)}
+                    >
+                      <Text style={[styles.contactMethodLabel, isDark && styles.contactMethodLabelDark]}>
+                        Email
+                      </Text>
+                      <Text style={[styles.contactMethodValue, isDark && styles.contactMethodValueDark]}>
+                        {selectedContact.emails[0]}
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+                <Pressable
+                  style={[styles.modalButton, styles.modalButtonCancel, { marginTop: 12 }]}
+                  onPress={() => {
+                    setShowContactMethodPicker(false);
+                    setSelectedContact(null);
+                  }}
+                >
+                  <Text style={styles.modalButtonCancelText}>Cancel</Text>
+                </Pressable>
+              </>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -520,5 +681,46 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  contactPickerName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000000',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  contactPickerNameDark: {
+    color: '#FFFFFF',
+  },
+  contactMethodButtons: {
+    gap: 12,
+    width: '100%',
+  },
+  contactMethodButton: {
+    padding: 16,
+    backgroundColor: '#F2F2F7',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  contactMethodButtonDark: {
+    backgroundColor: '#2C2C2E',
+    borderColor: '#38383A',
+  },
+  contactMethodLabel: {
+    fontSize: 14,
+    color: '#8E8E93',
+    marginBottom: 4,
+  },
+  contactMethodLabelDark: {
+    color: '#8E8E93',
+  },
+  contactMethodValue: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#000000',
+  },
+  contactMethodValueDark: {
+    color: '#FFFFFF',
   },
 });

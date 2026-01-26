@@ -16,10 +16,10 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
       return { messages: [...state.messages, message] };
     }),
 
-  updateMessage: (messageId, updates) =>
+  updateMessage: (id, updates) =>
     set((state) => ({
       messages: state.messages.map((msg) =>
-        msg.id === messageId ? { ...msg, ...updates } : msg
+        msg.id === id ? { ...msg, ...updates } : msg
       ),
     })),
 
@@ -40,6 +40,17 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
           ? { ...conv, ...updates, updatedAt: Date.now() }
           : conv
       ),
+    })),
+
+  updateConversationId: (oldId, newId) =>
+    set((state) => ({
+      conversations: state.conversations.map((conv) =>
+        conv.id === oldId ? { ...conv, id: newId } : conv
+      ),
+      messages: state.messages.map((msg) =>
+        msg.conversationId === oldId ? { ...msg, conversationId: newId } : msg
+      ),
+      activeConversationId: state.activeConversationId === oldId ? newId : state.activeConversationId
     })),
 
   incrementUnreadCount: (conversationId) =>

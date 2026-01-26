@@ -38,7 +38,7 @@ export class StorageService {
       id: number;
       conversation_id: string;
       sender: string;
-      sender_type: string;
+      sender_type: SenderType;
       message: string;
       timestamp: number;
       direction: string;
@@ -53,7 +53,7 @@ export class StorageService {
       id: row.id,
       conversationId: row.conversation_id,
       sender: row.sender,
-      senderType: row.sender_type as SenderType,
+      senderType: row.sender_type,
       message: row.message,
       timestamp: row.timestamp,
       direction: row.direction as Message['direction'],
@@ -68,7 +68,7 @@ export class StorageService {
       id: number;
       conversation_id: string;
       sender: string;
-      sender_type: string;
+      sender_type: SenderType;
       message: string;
       timestamp: number;
       direction: string;
@@ -80,7 +80,7 @@ export class StorageService {
       id: row.id,
       conversationId: row.conversation_id,
       sender: row.sender,
-      senderType: row.sender_type as SenderType,
+      senderType: row.sender_type,
       message: row.message,
       timestamp: row.timestamp,
       direction: row.direction as Message['direction'],
@@ -164,7 +164,7 @@ export class StorageService {
     const row = await db.getFirstAsync<{
       id: string;
       sender: string;
-      sender_type: string;
+      sender_type: SenderType;
       contact_name: string | null;
       last_message_preview: string | null;
       last_message_timestamp: number | null;
@@ -178,7 +178,7 @@ export class StorageService {
     return {
       id: row.id,
       sender: row.sender,
-      senderType: row.sender_type as SenderType,
+      senderType: row.sender_type,
       contactName: row.contact_name,
       lastMessagePreview: row.last_message_preview,
       lastMessageTimestamp: row.last_message_timestamp,
@@ -193,7 +193,7 @@ export class StorageService {
     const row = await db.getFirstAsync<{
       id: string;
       sender: string;
-      sender_type: string;
+      sender_type: SenderType;
       contact_name: string | null;
       last_message_preview: string | null;
       last_message_timestamp: number | null;
@@ -207,7 +207,7 @@ export class StorageService {
     return {
       id: row.id,
       sender: row.sender,
-      senderType: row.sender_type as SenderType,
+      senderType: row.sender_type,
       contactName: row.contact_name,
       lastMessagePreview: row.last_message_preview,
       lastMessageTimestamp: row.last_message_timestamp,
@@ -222,7 +222,7 @@ export class StorageService {
     const rows = await db.getAllAsync<{
       id: string;
       sender: string;
-      sender_type: string;
+      sender_type: SenderType;
       contact_name: string | null;
       last_message_preview: string | null;
       last_message_timestamp: number | null;
@@ -234,7 +234,7 @@ export class StorageService {
     return rows.map((row) => ({
       id: row.id,
       sender: row.sender,
-      senderType: row.sender_type as SenderType,
+      senderType: row.sender_type,
       contactName: row.contact_name,
       lastMessagePreview: row.last_message_preview,
       lastMessageTimestamp: row.last_message_timestamp,
@@ -329,7 +329,7 @@ export class StorageService {
       id: string;
       message_id: number;
       sender: string;
-      sender_type: string;
+      sender_type: SenderType;
       message: string;
       timestamp: number;
       retry_count: number;
@@ -342,7 +342,7 @@ export class StorageService {
       id: row.id,
       messageId: row.message_id,
       sender: row.sender,
-      senderType: row.sender_type as SenderType,
+      senderType: row.sender_type,
       message: row.message,
       timestamp: row.timestamp,
       retryCount: row.retry_count,

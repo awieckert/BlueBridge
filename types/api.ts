@@ -1,7 +1,7 @@
 import { SenderType } from './message';
 
 export interface SendMessageRequest {
-  sender: string;
+  recipient: string;
   senderType: SenderType;
   message: string;
   timestamp: number;
@@ -9,6 +9,7 @@ export interface SendMessageRequest {
 
 export interface SendMessageResponse {
   success: boolean;
+  conversationId: string;
   messageId?: number;
   error?: string;
 }

@@ -11,6 +11,7 @@ Add email address support to the React Native messaging app alongside existing p
 ## Implementation Approach
 
 **Data Model: Generic Recipient Pattern**
+
 - Replace `phone_number` columns with `recipient` + `recipient_type` columns
 - `recipient_type` enum: `'phone' | 'email'`
 - Justification: Cleaner architecture, future-proof, simpler queries, better indexing
@@ -20,7 +21,7 @@ Add email address support to the React Native messaging app alongside existing p
 ### Stage 1: Database Migration & Core Types (Foundation)
 
 **1.1 Database Migration** (`utils/database.ts`)
-- Add migration #2 to `runMigrations()` function
+
 - Add `recipient` (TEXT) and `recipient_type` (TEXT) columns to: `conversations`, `messages`, `queue`
 - Migrate existing `phone_number` data to `recipient` with type='phone'
 - Add CHECK constraint: `recipient_type IN ('phone', 'email')`
@@ -29,6 +30,7 @@ Add email address support to the React Native messaging app alongside existing p
 - Use transactions for safe rollback
 
 **1.2 Type Definitions** (`types/message.ts`, `types/api.ts`)
+
 - Add `RecipientType = 'phone' | 'email'` type
 - Update `Message` interface: `phoneNumber` → `recipient`, add `recipientType`
 - Update `Conversation` interface: `phoneNumber` → `recipient`, add `recipientType`
@@ -39,27 +41,39 @@ Add email address support to the React Native messaging app alongside existing p
 ### Stage 2: Validation & Utility Layer
 
 **2.1 Email Validation** (Create `utils/email.ts`)
+
 ```typescript
-export function validateEmail(email: string): boolean
-export function normalizeEmail(email: string): string | null  // Lowercase, trim
-export function formatEmailForDisplay(email: string): string
+export function validateEmail(email: string): boolean;
+export function normalizeEmail(email: string): string | null; // Lowercase, trim
+export function formatEmailForDisplay(email: string): string;
 ```
 
 **2.2 Unified Recipient Utilities** (Create `utils/recipient.ts`)
+
 ```typescript
-export function detectRecipientType(input: string): RecipientType | null
-export function validateRecipient(recipient: string, type: RecipientType): boolean
-export function normalizeRecipient(recipient: string, type: RecipientType): string | null
-export function formatRecipient(recipient: string, type: RecipientType): string
-export function autoNormalizeRecipient(input: string): { recipient: string; type: RecipientType } | null
+export function detectRecipientType(input: string): RecipientType | null;
+export function validateRecipient(
+  recipient: string,
+  type: RecipientType,
+): boolean;
+export function normalizeRecipient(
+  recipient: string,
+  type: RecipientType,
+): string | null;
+export function formatRecipient(recipient: string, type: RecipientType): string;
+export function autoNormalizeRecipient(
+  input: string,
+): { recipient: string; type: RecipientType } | null;
 ```
 
 **2.3 Keep Existing** (`utils/phoneNumber.ts`)
+
 - No changes needed - still used internally by `recipient.ts`
 
 ### Stage 3: Service Layer
 
 **3.1 Storage Service** (`services/storageService.ts`)
+
 - Update all SQL queries: `phone_number` → `recipient`, add `recipient_type` to WHERE clauses
 - Rename methods:
   - `getConversationByPhoneNumber()` → `getConversationByRecipient(recipient, type)`
@@ -69,6 +83,7 @@ export function autoNormalizeRecipient(input: string): { recipient: string; type
 - Add backward compatibility wrappers (deprecated) for transition period
 
 **3.2 Contact Service** (`services/contactService.ts`)
+
 - Extend `Contact` interface:
   ```typescript
   emails: string[]        // Normalized emails
@@ -81,6 +96,7 @@ export function autoNormalizeRecipient(input: string): { recipient: string; type
 - Update `searchContacts()` to search emails too
 
 **3.3 Message Service** (`services/messageService.ts`)
+
 - Update `sendMessage()` signature:
   ```typescript
   async sendMessage(
@@ -93,6 +109,7 @@ export function autoNormalizeRecipient(input: string): { recipient: string; type
 - Update request payload construction to use new fields
 
 **3.4 SignalR Service** (`services/signalRService.ts`)
+
 - Update `handleIncomingMessage()` validation: check `recipient` and `recipientType` fields
 - Use `getContactNameByRecipient()` for contact lookup
 - Update `getOrCreateConversation()` call with recipient type
@@ -101,17 +118,20 @@ export function autoNormalizeRecipient(input: string): { recipient: string; type
 ### Stage 4: State Management
 
 **4.1 Contact Store** (`stores/contactStore.ts`)
+
 - Add `getNameByRecipient(recipient: string, type: RecipientType): string | null`
 - Update existing methods to handle emails
 - Ensure contact search includes emails
 
 **4.2 Messages Store** (`stores/messagesStore.ts`)
+
 - Verify type compatibility with updated `Message` and `Conversation` interfaces
 - No major logic changes expected (types should handle it)
 
 ### Stage 5: UI Components
 
 **5.1 New Conversation Screen** (`app/conversation/new.tsx`)
+
 - **Manual Entry Modal:**
   - Add auto-detection: `detectRecipientType()` as user types
   - Show detected type indicator
@@ -130,6 +150,7 @@ export function autoNormalizeRecipient(input: string): { recipient: string; type
   - Show which field matched in results
 
 **5.2 Contact List Item** (`components/ContactListItem.tsx`)
+
 - Update props: `onPress: (recipient: string, type: RecipientType) => void`
 - When contact has multiple methods (multiple phones + emails):
   - Show primary method + "+X more" indicator
@@ -138,15 +159,18 @@ export function autoNormalizeRecipient(input: string): { recipient: string; type
 - Add type indicator icons (phone icon vs envelope icon)
 
 **5.3 Conversation Item** (`components/ConversationItem.tsx`)
+
 - Update display name logic:
   ```typescript
-  const displayName = conversation.contactName ||
-    formatRecipient(conversation.recipient, conversation.recipientType)
+  const displayName =
+    conversation.contactName ||
+    formatRecipient(conversation.recipient, conversation.recipientType);
   ```
 - Update avatar letter logic to handle emails properly
 - Ensure formatting works for both types
 
 **5.4 Chat Screen** (`app/chat/[conversationId].tsx`)
+
 - Update `handleSendMessage()`: pass `conversation.recipient` and `conversation.recipientType` to `messageService.sendMessage()`
 - Update header title: use `formatRecipient(conversation.recipient, conversation.recipientType)`
 - Update message object creation to include `recipientType`
@@ -180,23 +204,23 @@ export function autoNormalizeRecipient(input: string): { recipient: string; type
 
 ## Critical Files to Modify
 
-| File | Lines | Priority | Changes |
-|------|-------|----------|---------|
-| `utils/database.ts` | 169 | CRITICAL | Add migration #2, update schema definitions |
-| `types/message.ts` | 37 | CRITICAL | Update all interfaces with recipient/type |
-| `services/storageService.ts` | 348 | HIGH | Update all queries and method signatures |
-| `utils/recipient.ts` | NEW | HIGH | Create unified validation/formatting |
-| `utils/email.ts` | NEW | HIGH | Create email validation utilities |
-| `services/contactService.ts` | 215 | MEDIUM | Add email fetching and lookup |
-| `services/signalRService.ts` | 242 | MEDIUM | Update incoming message handling |
-| `services/messageService.ts` | 88 | MEDIUM | Update API request structure |
-| `app/conversation/new.tsx` | 525 | MEDIUM | Add email input, selection dialog |
-| `app/chat/[conversationId].tsx` | 242 | MEDIUM | Update message sending |
-| `types/api.ts` | 25 | LOW | Update request/response types |
-| `stores/contactStore.ts` | 120 | LOW | Add recipient lookup methods |
-| `stores/messagesStore.ts` | 72 | LOW | Type compatibility check |
-| `components/ContactListItem.tsx` | 130 | LOW | Update display and selection |
-| `components/ConversationItem.tsx` | 186 | LOW | Update formatting logic |
+| File                              | Lines | Priority | Changes                                     |
+| --------------------------------- | ----- | -------- | ------------------------------------------- |
+| `utils/database.ts`               | 169   | CRITICAL | Add migration #2, update schema definitions |
+| `types/message.ts`                | 37    | CRITICAL | Update all interfaces with recipient/type   |
+| `services/storageService.ts`      | 348   | HIGH     | Update all queries and method signatures    |
+| `utils/recipient.ts`              | NEW   | HIGH     | Create unified validation/formatting        |
+| `utils/email.ts`                  | NEW   | HIGH     | Create email validation utilities           |
+| `services/contactService.ts`      | 215   | MEDIUM   | Add email fetching and lookup               |
+| `services/signalRService.ts`      | 242   | MEDIUM   | Update incoming message handling            |
+| `services/messageService.ts`      | 88    | MEDIUM   | Update API request structure                |
+| `app/conversation/new.tsx`        | 525   | MEDIUM   | Add email input, selection dialog           |
+| `app/chat/[conversationId].tsx`   | 242   | MEDIUM   | Update message sending                      |
+| `types/api.ts`                    | 25    | LOW      | Update request/response types               |
+| `stores/contactStore.ts`          | 120   | LOW      | Add recipient lookup methods                |
+| `stores/messagesStore.ts`         | 72    | LOW      | Type compatibility check                    |
+| `components/ContactListItem.tsx`  | 130   | LOW      | Update display and selection                |
+| `components/ConversationItem.tsx` | 186   | LOW      | Update formatting logic                     |
 
 ## Edge Cases to Handle
 
@@ -227,6 +251,7 @@ export function autoNormalizeRecipient(input: string): { recipient: string; type
 ## Verification & Testing
 
 ### Database Migration Verification
+
 - [ ] All existing phone numbers migrated to recipient field with type='phone'
 - [ ] No data loss during migration
 - [ ] UNIQUE constraint works (recipient + type combination)
@@ -234,17 +259,20 @@ export function autoNormalizeRecipient(input: string): { recipient: string; type
 - [ ] Old columns dropped without errors
 
 ### Email Validation Testing
+
 - [ ] Valid email formats accepted: `user@example.com`, `name+tag@domain.co.uk`
 - [ ] Invalid emails rejected: `invalid`, `@example.com`, `user@`
 - [ ] Normalization works: `User@Example.COM` → `user@example.com`
 
 ### Contact Service Testing
+
 - [ ] Fetch contacts with emails from device
 - [ ] Lookup by email works
 - [ ] Lookup by phone still works
 - [ ] Search finds both phones and emails
 
 ### Message Flow Testing
+
 - [ ] Send message to phone number (existing flow)
 - [ ] Send message to email address (new flow)
 - [ ] Receive message from phone number via SignalR
@@ -252,6 +280,7 @@ export function autoNormalizeRecipient(input: string): { recipient: string; type
 - [ ] Failed messages queue correctly for both types
 
 ### UI Testing
+
 - [ ] Manual entry with phone number: auto-detects as 'phone'
 - [ ] Manual entry with email: auto-detects as 'email'
 - [ ] Contact with only phone: creates conversation directly
@@ -262,6 +291,7 @@ export function autoNormalizeRecipient(input: string): { recipient: string; type
 - [ ] Messages send successfully for both types
 
 ### Integration Testing
+
 - [ ] Create conversation with email → send message → receive response
 - [ ] Create conversation with phone → send message → receive response
 - [ ] Existing conversations still work after migration

@@ -7,11 +7,12 @@ export interface MessagesStore {
 
   // Actions
   addMessage: (message: Message) => void;
-  updateMessage: (messageId: string, updates: Partial<Message>) => void;
+  updateMessage: (id: number, updates: Partial<Message>) => void;
   getMessagesByConversation: (conversationId: string) => Message[];
 
   setActiveConversation: (conversationId: string | null) => void;
   updateConversation: (conversationId: string, updates: Partial<Conversation>) => void;
+  updateConversationId: (oldId: string, newId: string) => void;
   incrementUnreadCount: (conversationId: string) => void;
   resetUnreadCount: (conversationId: string) => void;
 

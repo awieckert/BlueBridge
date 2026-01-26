@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Conversation, SenderType } from '@/types/message';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { formatPhoneNumber } from '@/utils/phoneNumber';
+import { SenderTypeEnum } from '@/utils/senderTypeEnum';
 
 interface ConversationItemProps {
   conversation: Conversation;
@@ -10,7 +11,7 @@ interface ConversationItemProps {
 }
 
 const formatSender = (sender: string, senderType: SenderType): string => {
-  return senderType === 'phone' ? formatPhoneNumber(sender) : sender;
+  return senderType === SenderTypeEnum.Phone ? formatPhoneNumber(sender) : sender;
 };
 
 export function ConversationItem({ conversation, onPress }: ConversationItemProps) {

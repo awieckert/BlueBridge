@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   View,
   FlatList,
@@ -18,9 +18,10 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { formatPhoneNumber } from '@/utils/phoneNumber';
 import type { Message, SenderType } from '@/types/message';
 import type { ApiError } from '@/types/api';
+import { SenderTypeEnum } from '@/utils/senderTypeEnum';
 
 const formatSender = (sender: string, senderType: SenderType): string => {
-  return senderType === 'phone' ? formatPhoneNumber(sender) : sender;
+  return senderType === SenderTypeEnum.Phone ? formatPhoneNumber(sender) : sender;
 };
 
 export default function ChatScreen() {
@@ -29,25 +30,53 @@ export default function ChatScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
-  const { messages, getMessagesByConversation, addMessage, resetUnreadCount } = useMessagesStore();
+  const { addMessage, resetUnreadCount, setActiveConversation } = useMessagesStore();
+
+  // Subscribe directly to the messages array
+  const allMessages = useMessagesStore((state) => state.messages);
+
+  // Filter and sort messages for this conversation using useMemo
+  const conversationMessages = useMemo(() => {
+    return allMessages
+      .filter((msg) => msg.conversationId === params.conversationId)
+      .sort((a, b) => a.timestamp - b.timestamp);
+  }, [allMessages, params.conversationId]);
+
   const [conversation, setConversation] = useState<any>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
-  const conversationMessages = getMessagesByConversation(params.conversationId);
-
   useEffect(() => {
+    // Set this as the active conversation
+    setActiveConversation(params.conversationId);
+
     loadConversation();
     loadMessages();
 
     // Reset unread count when viewing conversation
     resetUnreadCount(params.conversationId);
+
+    // Clear active conversation when unmounting
+    return () => {
+      setActiveConversation(null);
+    };
   }, [params.conversationId]);
 
   const loadConversation = async () => {
     try {
+      // Try to load from database first
       const conv = await storageService.getConversation(params.conversationId);
-      setConversation(conv);
+      if (conv) {
+        setConversation(conv);
+      } else {
+        // If not in database, check Zustand store (might be temp conversation)
+        const storeConv = useMessagesStore.getState().conversations.find(
+          c => c.id === params.conversationId
+        );
+        if (storeConv) {
+          setConversation(storeConv);
+        }
+      }
     } catch (error) {
       console.error('Failed to load conversation:', error);
     }
@@ -58,7 +87,16 @@ export default function ChatScreen() {
       const dbMessages = await storageService.getMessagesByConversation(
         params.conversationId
       );
-      // Messages are already in the store, but we can reload them if needed
+
+      // Add any messages from DB that aren't in the store yet
+      const storeMessages = useMessagesStore.getState().messages;
+      const storeMessageIds = new Set(storeMessages.map(m => m.id));
+
+      dbMessages.forEach(dbMsg => {
+        if (!storeMessageIds.has(dbMsg.id)) {
+          useMessagesStore.getState().addMessage(dbMsg);
+        }
+      });
     } catch (error) {
       console.error('Failed to load messages:', error);
     }
@@ -68,13 +106,13 @@ export default function ChatScreen() {
     if (!conversation) return;
 
     const now = Date.now();
-    // Create temporary negative ID for optimistic UI
-    const tempId = -Date.now();
+    const tempMessageId = -Date.now();
+    const currentConversationId = params.conversationId;
 
-    // Create optimistic message with temporary ID
+    // Create optimistic message with current conversationId (might be temp)
     const optimisticMessage: Message = {
-      id: tempId,
-      conversationId: params.conversationId,
+      id: tempMessageId,
+      conversationId: currentConversationId,
       sender: conversation.sender,
       senderType: conversation.senderType,
       message: messageContent,
@@ -94,17 +132,70 @@ export default function ChatScreen() {
       }, 100);
 
       // Send via messageService
-      try {
-        const response = await messageService.sendMessage(
-          conversation.sender,
-          conversation.senderType,
-          messageContent,
-          now
+      const response = await messageService.sendMessage(
+        conversation.sender,
+        conversation.senderType,
+        messageContent,
+        now
+      );
+
+      console.log('[ChatScreen] Message sent successfully:', response);
+
+      // Get real conversationId from server
+      const realConversationId = response.conversationId;
+
+      // Check if we need to update conversationId (temp → real)
+      if (realConversationId !== currentConversationId) {
+        console.log('[ChatScreen] ConversationId changed:', {
+          old: currentConversationId,
+          new: realConversationId
+        });
+
+        // Save conversation to database with real ID
+        await storageService.saveConversation({
+          id: realConversationId,
+          sender: conversation.sender,
+          senderType: conversation.senderType,
+          contactName: conversation.contactName,
+          lastMessagePreview: messageContent,
+          lastMessageTimestamp: now,
+          unreadCount: 0,
+          createdAt: conversation.createdAt || now,
+          updatedAt: now,
+        });
+
+        // Save message to database with real conversationId
+        const realMessageId = await storageService.saveMessage({
+          conversationId: realConversationId,
+          sender: conversation.sender,
+          senderType: conversation.senderType,
+          message: messageContent,
+          timestamp: now,
+          direction: 'outgoing',
+          status: 'delivered',
+          createdAt: now,
+        });
+
+        // Update store: conversationId (temp → real)
+        useMessagesStore.getState().updateConversationId(
+          currentConversationId,
+          realConversationId
         );
 
-        // Save to database (gets real ID from AUTOINCREMENT)
-        const realId = await storageService.saveMessage({
-          conversationId: params.conversationId,
+        // Update optimistic message with real IDs
+        useMessagesStore.getState().updateMessage(tempMessageId, {
+          id: realMessageId,
+          conversationId: realConversationId,
+          status: 'delivered'
+        });
+
+        // Navigate to real conversationId (replace URL)
+        router.replace(`/chat/${realConversationId}`);
+
+      } else {
+        // Normal flow: conversation already has real ID
+        const realMessageId = await storageService.saveMessage({
+          conversationId: currentConversationId,
           sender: conversation.sender,
           senderType: conversation.senderType,
           message: messageContent,
@@ -115,29 +206,31 @@ export default function ChatScreen() {
         });
 
         // Update conversation
-        await storageService.updateConversation(params.conversationId, {
+        await storageService.updateConversation(currentConversationId, {
           lastMessagePreview: messageContent,
           lastMessageTimestamp: now,
         });
 
         // Update optimistic message with real ID and status
-        useMessagesStore.getState().updateMessage(tempId, {
-          id: realId,
+        useMessagesStore.getState().updateMessage(tempMessageId, {
+          id: realMessageId,
           status: 'delivered'
         });
+      }
 
-        console.log('Message sent successfully:', response);
-      } catch (apiError) {
-        // Handle send failure
-        const error = apiError as ApiError;
-        console.error('Failed to send message via API:', error.message);
+    } catch (apiError) {
+      // Handle send failure
+      const error = apiError as ApiError;
+      console.error('[ChatScreen] Failed to send message via API:', error.message);
 
-        // Update message status to failed
-        useMessagesStore.getState().updateMessage(tempId, { status: 'failed' });
+      // Update message status to failed
+      useMessagesStore.getState().updateMessage(tempMessageId, { status: 'failed' });
 
-        // Save failed message to database
-        const realId = await storageService.saveMessage({
-          conversationId: params.conversationId,
+      // Only save to database if conversation already has real ID
+      const conversationExists = await storageService.getConversation(currentConversationId);
+      if (conversationExists) {
+        const realMessageId = await storageService.saveMessage({
+          conversationId: currentConversationId,
           sender: conversation.sender,
           senderType: conversation.senderType,
           message: messageContent,
@@ -148,12 +241,10 @@ export default function ChatScreen() {
         });
 
         // Update with real ID
-        useMessagesStore.getState().updateMessage(tempId, { id: realId });
+        useMessagesStore.getState().updateMessage(tempMessageId, { id: realMessageId });
 
         // TODO: Phase 4 - Queue message for retry
       }
-    } catch (error) {
-      console.error('Failed to send message:', error);
     }
   };
 
