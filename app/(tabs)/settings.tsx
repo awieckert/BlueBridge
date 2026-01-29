@@ -35,34 +35,48 @@ export default function SettingsScreen() {
   const handleSaveApiKey = async () => {
     const trimmedKey = apiKeyInput.trim();
 
-    // Disconnect existing connection
-    await signalRService.disconnect();
+    try {
+      // Disconnect existing connection
+      await signalRService.disconnect();
 
-    if (trimmedKey) {
-      setApiKey(trimmedKey);
-      // Reconnect with new API key
-      await signalRService.connect();
-      Alert.alert('Success', 'API key saved and connected');
-    } else {
-      setApiKey(null);
-      Alert.alert('Success', 'API key cleared');
+      if (trimmedKey) {
+        setApiKey(trimmedKey);
+        // Reconnect with new API key (don't await - let it connect in background)
+        signalRService.connect().catch((err) => {
+          console.log('[Settings] Connection failed after saving API key:', err.message);
+        });
+        Alert.alert('Success', 'API key saved. Connecting to server...');
+      } else {
+        setApiKey(null);
+        Alert.alert('Success', 'API key cleared');
+      }
+    } catch (error) {
+      console.error('[Settings] Error saving API key:', error);
+      Alert.alert('Error', 'Failed to update API key');
     }
   };
 
   const handleSaveServerUrl = async () => {
     const trimmedUrl = serverUrlInput.trim();
     if (trimmedUrl) {
-      // Disconnect existing connection
-      await signalRService.disconnect();
+      try {
+        // Disconnect existing connection
+        await signalRService.disconnect();
 
-      setServerUrl(trimmedUrl);
+        setServerUrl(trimmedUrl);
 
-      // Reconnect with new server URL if API key exists
-      if (apiKey) {
-        await signalRService.connect();
-        Alert.alert('Success', 'Server URL saved and reconnected');
-      } else {
-        Alert.alert('Success', 'Server URL saved');
+        // Reconnect with new server URL if API key exists (don't await - let it connect in background)
+        if (apiKey) {
+          signalRService.connect().catch((err) => {
+            console.log('[Settings] Connection failed after saving server URL:', err.message);
+          });
+          Alert.alert('Success', 'Server URL saved. Reconnecting...');
+        } else {
+          Alert.alert('Success', 'Server URL saved');
+        }
+      } catch (error) {
+        console.error('[Settings] Error saving server URL:', error);
+        Alert.alert('Error', 'Failed to update server URL');
       }
     }
   };

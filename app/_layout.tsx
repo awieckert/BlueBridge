@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet, AppState, AppStateStatus } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -36,11 +37,15 @@ export default function RootLayout() {
         // Set up network monitoring
         setupNetworkMonitoring();
 
-        // Connect to SignalR if API key exists
+        // Connect to SignalR if API key exists (don't await - let it connect in background)
         const { apiKey } = useAuthStore.getState();
         if (apiKey) {
-          console.log('API key found, connecting to SignalR...');
-          await signalRService.connect();
+          console.log('API key found, connecting to SignalR in background...');
+          signalRService.connect().catch((err) => {
+            console.log('[SignalR] Background connection failed, will retry:', err.message);
+          });
+        } else {
+          console.log('No API key found, skipping SignalR connection');
         }
 
         // Set up app state monitoring (background/foreground)
@@ -48,7 +53,7 @@ export default function RootLayout() {
 
         setIsReady(true);
       } catch (err) {
-        console.error('Failed to initialize database:', err);
+        console.error('Failed to initialize app:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');
       }
     }
@@ -128,34 +133,43 @@ export default function RootLayout() {
 
   if (error) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>Error initializing app</Text>
-        <Text style={styles.errorDetail}>{error}</Text>
-      </View>
+      <GestureHandlerRootView style={styles.gestureRoot}>
+        <View style={styles.container}>
+          <Text style={styles.errorText}>Error initializing app</Text>
+          <Text style={styles.errorDetail}>{error}</Text>
+        </View>
+      </GestureHandlerRootView>
     );
   }
 
   if (!isReady) {
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.loadingText}>Initializing...</Text>
-      </View>
+      <GestureHandlerRootView style={styles.gestureRoot}>
+        <View style={styles.container}>
+          <ActivityIndicator size="large" />
+          <Text style={styles.loadingText}>Initializing...</Text>
+        </View>
+      </GestureHandlerRootView>
     );
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <GestureHandlerRootView style={styles.gestureRoot}>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+        </Stack>
+        <StatusBar style="auto" />
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
+  gestureRoot: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     justifyContent: 'center',

@@ -22,6 +22,8 @@ export class SignalRService {
 
     if (!apiKey) {
       console.log('[SignalR] No API key configured, skipping connection');
+      useConnectionStore.getState().setConnectionStatus('disconnected');
+      useConnectionStore.getState().setLastError('No API key configured');
       return;
     }
 
@@ -80,7 +82,13 @@ export class SignalRService {
       useConnectionStore.getState().setLastError(null);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[SignalR] Connection failed:', errorMessage);
+
+      // Log at INFO level if it's the first attempt, ERROR level for subsequent failures
+      if (this.reconnectAttempt === 0) {
+        console.log(`[SignalR] Initial connection failed (will retry): ${errorMessage}`);
+      } else {
+        console.error(`[SignalR] Connection attempt ${this.reconnectAttempt + 1} failed:`, errorMessage);
+      }
 
       this.isConnecting = false;
       useConnectionStore.getState().setConnected(false);
