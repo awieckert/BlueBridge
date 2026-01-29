@@ -18,6 +18,8 @@ export interface MessagesStore {
 
   loadMessages: (messages: Message[]) => void;
   loadConversations: (conversations: Conversation[]) => void;
+  deleteConversation: (conversationId: string) => void;
+  deleteMessagesForConversation: (conversationId: string) => void;
   clearAll: () => void;
 }
 
@@ -44,6 +46,7 @@ export interface QueueStore {
   updateQueuedMessage: (messageId: string, updates: Partial<QueuedMessage>) => void;
   setProcessing: (processing: boolean) => void;
   loadQueue: (messages: QueuedMessage[]) => void;
+  removeQueuedMessagesForConversation: (sender: string, senderType: number) => void;
   clearQueue: () => void;
 }
 

@@ -352,6 +352,53 @@ export class StorageService {
     }));
   }
 
+  // Delete operations
+  async deleteConversation(conversationId: string): Promise<void> {
+    const db = await getDatabase();
+
+    // Delete messages first (this will CASCADE delete queue items via foreign key)
+    await this.deleteMessagesByConversation(conversationId);
+
+    // Delete the conversation
+    await db.runAsync('DELETE FROM conversations WHERE id = ?', [conversationId]);
+
+    console.log(`[StorageService] Deleted conversation ${conversationId}`);
+  }
+
+  async deleteMessagesByConversation(conversationId: string): Promise<void> {
+    const db = await getDatabase();
+    await db.runAsync('DELETE FROM messages WHERE conversation_id = ?', [conversationId]);
+    console.log(`[StorageService] Deleted messages for conversation ${conversationId}`);
+  }
+
+  async deleteQueuedMessagesByConversation(conversationId: string): Promise<void> {
+    const db = await getDatabase();
+
+    // Get all message IDs for this conversation
+    const messages = await this.getMessagesByConversation(conversationId);
+    const messageIds = messages.map(m => m.id);
+
+    if (messageIds.length === 0) return;
+
+    // Delete queue items for these messages
+    const placeholders = messageIds.map(() => '?').join(',');
+    await db.runAsync(
+      `DELETE FROM queue WHERE message_id IN (${placeholders})`,
+      messageIds
+    );
+
+    console.log(`[StorageService] Deleted queued messages for conversation ${conversationId}`);
+  }
+
+  async getConversationMessageCount(conversationId: string): Promise<number> {
+    const db = await getDatabase();
+    const result = await db.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) as count FROM messages WHERE conversation_id = ?',
+      [conversationId]
+    );
+    return result?.count || 0;
+  }
+
   // Utility
   async clearAllData(): Promise<void> {
     const db = await getDatabase();

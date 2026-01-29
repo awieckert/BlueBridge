@@ -1,11 +1,14 @@
-import React, { useEffect, useState } from 'react';
-import { View, FlatList, StyleSheet, Text, RefreshControl, Pressable } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, FlatList, StyleSheet, Text, RefreshControl, Pressable, Alert } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useMessagesStore, useConnectionStore } from '@/stores';
 import { storageService } from '@/services/storageService';
-import { ConversationItem } from '@/components/ConversationItem';
+import { conversationService } from '@/services/conversationService';
+import { SwipeableConversationItem } from '@/components/SwipeableConversationItem';
 import { ConnectionBanner } from '@/components/ConnectionBanner';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Conversation } from '@/types/message';
 
 export default function ConversationsScreen() {
   const router = useRouter();
@@ -34,16 +37,80 @@ export default function ConversationsScreen() {
     setRefreshing(false);
   };
 
-  const handleConversationPress = (conversationId: string) => {
+  const handleConversationPress = useCallback(async (conversationId: string) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push({
       pathname: '/chat/[conversationId]',
       params: { conversationId },
     });
-  };
+  }, [router]);
 
-  const handleNewConversation = () => {
+  const handleNewConversation = useCallback(async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     router.push('/conversation/new');
-  };
+  }, [router]);
+
+  const handleDeleteConversation = useCallback(async (conversationId: string) => {
+    try {
+      // Get conversation stats for confirmation message
+      const stats = await conversationService.getConversationStats(conversationId);
+
+      // Show confirmation dialog
+      Alert.alert(
+        'Delete Conversation?',
+        stats.messageCount > 0
+          ? `This will permanently delete ${stats.messageCount} message${stats.messageCount === 1 ? '' : 's'}. This cannot be undone.`
+          : 'This will permanently delete this conversation. This cannot be undone.',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: async () => {
+              await Haptics.selectionAsync();
+            },
+          },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                // Success haptic
+                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+                // Delete the conversation
+                await conversationService.deleteConversation(conversationId);
+
+                console.log('[ConversationsScreen] Successfully deleted conversation:', conversationId);
+              } catch (error) {
+                console.error('[ConversationsScreen] Failed to delete conversation:', error);
+
+                // Error haptic
+                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+
+                Alert.alert(
+                  'Delete Failed',
+                  'Could not delete the conversation. Please try again.',
+                  [{ text: 'OK' }]
+                );
+              }
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('[ConversationsScreen] Failed to get conversation stats:', error);
+    }
+  }, []);
+
+  const keyExtractor = useCallback((item: Conversation) => item.id, []);
+
+  const renderItem = useCallback(({ item }: { item: Conversation }) => (
+    <SwipeableConversationItem
+      conversation={item}
+      onPress={() => handleConversationPress(item.id)}
+      onDelete={() => handleDeleteConversation(item.id)}
+    />
+  ), [handleConversationPress, handleDeleteConversation]);
 
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
@@ -61,13 +128,8 @@ export default function ConversationsScreen() {
       <ConnectionBanner />
       <FlatList
         data={conversations}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <ConversationItem
-            conversation={item}
-            onPress={() => handleConversationPress(item.id)}
-          />
-        )}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
         ListEmptyComponent={renderEmptyState}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
@@ -75,6 +137,11 @@ export default function ConversationsScreen() {
         contentContainerStyle={
           conversations.length === 0 ? styles.emptyListContainer : undefined
         }
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        updateCellsBatchingPeriod={50}
+        initialNumToRender={10}
+        windowSize={10}
       />
 
       {/* Floating Action Button */}

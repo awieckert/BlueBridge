@@ -1,5 +1,6 @@
-import React from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Pressable, StyleSheet, Animated } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -11,30 +12,80 @@ interface ScrollToBottomButtonProps {
 export function ScrollToBottomButton({ onPress, visible }: ScrollToBottomButtonProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
-  if (!visible) {
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          friction: 8,
+          tension: 40,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 0.8,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [visible, fadeAnim, scaleAnim]);
+
+  const handlePress = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress();
+  };
+
+  if (!visible && fadeAnim._value === 0) {
     return null;
   }
 
   return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.button,
-        isDark && styles.buttonDark,
-        pressed && styles.buttonPressed,
+    <Animated.View
+      style={[
+        styles.container,
+        {
+          opacity: fadeAnim,
+          transform: [{ scale: scaleAnim }],
+        },
       ]}
-      onPress={onPress}
     >
-      <Ionicons name="chevron-down" size={24} color={isDark ? '#FFFFFF' : '#007AFF'} />
-    </Pressable>
+      <Pressable
+        style={({ pressed }) => [
+          styles.button,
+          isDark && styles.buttonDark,
+          pressed && styles.buttonPressed,
+        ]}
+        onPress={handlePress}
+      >
+        <Ionicons name="chevron-down" size={24} color={isDark ? '#FFFFFF' : '#007AFF'} />
+      </Pressable>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  button: {
+  container: {
     position: 'absolute',
     bottom: 90,
     right: 20,
+  },
+  button: {
     width: 44,
     height: 44,
     borderRadius: 22,

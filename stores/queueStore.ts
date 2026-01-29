@@ -31,5 +31,12 @@ export const useQueueStore = create<QueueStore>((set) => ({
 
   loadQueue: (messages) => set({ queuedMessages: messages }),
 
+  removeQueuedMessagesForConversation: (sender, senderType) =>
+    set((state) => ({
+      queuedMessages: state.queuedMessages.filter(
+        (msg) => !(msg.sender === sender && msg.senderType === senderType)
+      ),
+    })),
+
   clearQueue: () => set({ queuedMessages: [] }),
 }));

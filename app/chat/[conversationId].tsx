@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   FlatList,
@@ -6,11 +6,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Text,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useMessagesStore } from '@/stores';
 import { storageService } from '@/services/storageService';
 import { messageService } from '@/services/messageService';
+import { queueService } from '@/services/queueService';
 import { MessageBubble } from '@/components/MessageBubble';
 import { MessageInput } from '@/components/MessageInput';
 import { ScrollToBottomButton } from '@/components/ScrollToBottomButton';
@@ -30,7 +32,7 @@ export default function ChatScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
-  const { addMessage, resetUnreadCount, setActiveConversation } = useMessagesStore();
+  const { addMessage, resetUnreadCount, setActiveConversation, conversations } = useMessagesStore();
 
   // Subscribe directly to the messages array
   const allMessages = useMessagesStore((state) => state.messages);
@@ -44,6 +46,7 @@ export default function ChatScreen() {
 
   const [conversation, setConversation] = useState<any>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
@@ -61,6 +64,18 @@ export default function ChatScreen() {
       setActiveConversation(null);
     };
   }, [params.conversationId]);
+
+  // Handle conversation deletion while viewing
+  useEffect(() => {
+    // Check if conversation still exists
+    const conversationExists = conversations.some(c => c.id === params.conversationId);
+
+    if (!conversationExists && conversation !== null) {
+      // Conversation was deleted, navigate back
+      console.log('[ChatScreen] Conversation was deleted, navigating back');
+      router.back();
+    }
+  }, [conversations, params.conversationId, conversation, router]);
 
   const loadConversation = async () => {
     try {
@@ -105,6 +120,7 @@ export default function ChatScreen() {
   const handleSendMessage = async (messageContent: string) => {
     if (!conversation) return;
 
+    setIsSending(true);
     const now = Date.now();
     const tempMessageId = -Date.now();
     const currentConversationId = params.conversationId;
@@ -218,15 +234,29 @@ export default function ChatScreen() {
         });
       }
 
+      setIsSending(false);
     } catch (apiError) {
+      setIsSending(false);
       // Handle send failure
       const error = apiError as ApiError;
       console.error('[ChatScreen] Failed to send message via API:', error.message);
 
-      // Update message status to failed
-      useMessagesStore.getState().updateMessage(tempMessageId, { status: 'failed' });
+      // Show user-friendly error message for common errors
+      let errorTitle = 'Message Failed';
+      let errorMessage = 'Your message will be retried automatically when connection is restored.';
 
-      // Only save to database if conversation already has real ID
+      if (error.status === 401 || error.status === 403) {
+        errorTitle = 'Authentication Error';
+        errorMessage = 'Please check your API key in Settings and try again.';
+      } else if (error.status === 429) {
+        errorTitle = 'Rate Limited';
+        errorMessage = 'Too many messages sent. Please wait a moment and try again.';
+      } else if (error.status === 0) {
+        errorTitle = 'No Connection';
+        errorMessage = 'Your message is queued and will send when you\'re back online.';
+      }
+
+      // Only save to database and queue if conversation already has real ID
       const conversationExists = await storageService.getConversation(currentConversationId);
       if (conversationExists) {
         const realMessageId = await storageService.saveMessage({
@@ -236,14 +266,34 @@ export default function ChatScreen() {
           message: messageContent,
           timestamp: now,
           direction: 'outgoing',
-          status: 'failed',
+          status: 'queued',
           createdAt: now,
         });
 
-        // Update with real ID
-        useMessagesStore.getState().updateMessage(tempMessageId, { id: realMessageId });
+        // Update with real ID and queued status
+        useMessagesStore.getState().updateMessage(tempMessageId, {
+          id: realMessageId,
+          status: 'queued'
+        });
 
-        // TODO: Phase 4 - Queue message for retry
+        // Queue message for retry
+        await queueService.queueMessage(
+          realMessageId,
+          conversation.sender,
+          conversation.senderType,
+          messageContent,
+          now,
+          error.message
+        );
+
+        // Only show alert for non-network errors (network errors will auto-retry)
+        if (error.status !== 0) {
+          Alert.alert(errorTitle, errorMessage, [{ text: 'OK' }]);
+        }
+      } else {
+        // Temp conversation - just mark as failed
+        useMessagesStore.getState().updateMessage(tempMessageId, { status: 'failed' });
+        Alert.alert(errorTitle, 'Failed to send message. Please try again.', [{ text: 'OK' }]);
       }
     }
   };
@@ -259,9 +309,25 @@ export default function ChatScreen() {
     flatListRef.current?.scrollToEnd({ animated: true });
   };
 
-  const renderMessage = ({ item }: { item: Message }) => (
-    <MessageBubble message={item} />
-  );
+  const handleRetryMessage = useCallback(async (message: Message) => {
+    console.log('[ChatScreen] Manual retry requested for message:', message.id);
+    try {
+      await queueService.retryFailedMessage(message.id, message);
+    } catch (error) {
+      console.error('[ChatScreen] Failed to retry message:', error);
+      Alert.alert(
+        'Retry Failed',
+        'Could not retry sending this message. Please check your connection and try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  }, []);
+
+  const renderMessage = useCallback(({ item }: { item: Message }) => (
+    <MessageBubble message={item} onRetry={handleRetryMessage} />
+  ), [handleRetryMessage]);
+
+  const keyExtractor = useCallback((item: Message) => item.id.toString(), []);
 
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
@@ -296,7 +362,7 @@ export default function ChatScreen() {
         <FlatList
           ref={flatListRef}
           data={conversationMessages}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={keyExtractor}
           renderItem={renderMessage}
           ListEmptyComponent={renderEmptyState}
           contentContainerStyle={
@@ -312,6 +378,11 @@ export default function ChatScreen() {
               flatListRef.current?.scrollToEnd({ animated: true });
             }
           }}
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={20}
+          updateCellsBatchingPeriod={50}
+          initialNumToRender={20}
+          windowSize={10}
         />
 
         <ScrollToBottomButton
@@ -320,7 +391,7 @@ export default function ChatScreen() {
         />
       </View>
 
-      <MessageInput onSend={handleSendMessage} />
+      <MessageInput onSend={handleSendMessage} isSending={isSending} />
     </KeyboardAvoidingView>
   );
 }

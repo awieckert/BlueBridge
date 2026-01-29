@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useConnectionStore } from '@/stores';
 
 export function ConnectionBanner() {
@@ -14,6 +14,7 @@ export function ConnectionBanner() {
       return {
         text: 'No Internet Connection',
         color: '#FF9500',
+        showSpinner: false,
       };
     }
 
@@ -21,6 +22,7 @@ export function ConnectionBanner() {
       return {
         text: 'Connecting...',
         color: '#007AFF',
+        showSpinner: true,
       };
     }
 
@@ -28,12 +30,14 @@ export function ConnectionBanner() {
       return {
         text: 'Reconnecting...',
         color: '#FF9500',
+        showSpinner: true,
       };
     }
 
     return {
       text: 'Disconnected',
       color: '#FF3B30',
+      showSpinner: false,
     };
   };
 
@@ -41,6 +45,9 @@ export function ConnectionBanner() {
 
   return (
     <View style={[styles.banner, { backgroundColor: config.color }]}>
+      {config.showSpinner && (
+        <ActivityIndicator size="small" color="#FFFFFF" style={styles.spinner} />
+      )}
       <Text style={styles.text}>{config.text}</Text>
     </View>
   );
@@ -52,6 +59,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  spinner: {
+    marginRight: 8,
   },
   text: {
     color: '#FFFFFF',

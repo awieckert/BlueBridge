@@ -73,6 +73,18 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
 
   loadConversations: (conversations) => set({ conversations }),
 
+  deleteConversation: (conversationId) =>
+    set((state) => ({
+      conversations: state.conversations.filter((conv) => conv.id !== conversationId),
+      messages: state.messages.filter((msg) => msg.conversationId !== conversationId),
+      activeConversationId: state.activeConversationId === conversationId ? null : state.activeConversationId,
+    })),
+
+  deleteMessagesForConversation: (conversationId) =>
+    set((state) => ({
+      messages: state.messages.filter((msg) => msg.conversationId !== conversationId),
+    })),
+
   clearAll: () =>
     set({
       messages: [],

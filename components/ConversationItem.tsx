@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Conversation, SenderType } from '@/types/message';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -14,7 +14,7 @@ const formatSender = (sender: string, senderType: SenderType): string => {
   return senderType === SenderTypeEnum.Phone ? formatPhoneNumber(sender) : sender;
 };
 
-export function ConversationItem({ conversation, onPress }: ConversationItemProps) {
+function ConversationItemComponent({ conversation, onPress }: ConversationItemProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -187,4 +187,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+});
+
+// Memoize component to prevent unnecessary re-renders
+export const ConversationItem = memo(ConversationItemComponent, (prevProps, nextProps) => {
+  return (
+    prevProps.conversation.id === nextProps.conversation.id &&
+    prevProps.conversation.lastMessagePreview === nextProps.conversation.lastMessagePreview &&
+    prevProps.conversation.lastMessageTimestamp === nextProps.conversation.lastMessageTimestamp &&
+    prevProps.conversation.unreadCount === nextProps.conversation.unreadCount &&
+    prevProps.conversation.contactName === nextProps.conversation.contactName
+  );
 });

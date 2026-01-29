@@ -11,6 +11,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { initializeDatabase } from '@/utils/database';
 import { signalRService } from '@/services/signalRService';
 import { storageService } from '@/services/storageService';
+import { queueService } from '@/services/queueService';
 import { useAuthStore, useConnectionStore, useMessagesStore } from '@/stores';
 
 export const unstable_settings = {
@@ -92,6 +93,12 @@ export default function RootLayout() {
           signalRService.connect();
         }
       }
+
+      // Process message queue when coming back online
+      if (isOnline) {
+        console.log('Network restored, processing message queue...');
+        queueService.processQueue();
+      }
     });
 
     return unsubscribe;
@@ -108,6 +115,10 @@ export default function RootLayout() {
           console.log('App foregrounded, reconnecting to SignalR...');
           signalRService.connect();
         }
+
+        // Process message queue when app comes to foreground
+        console.log('App foregrounded, processing message queue...');
+        queueService.processQueue();
       }
       // Note: We maintain SignalR connection when backgrounded for message reception
     });

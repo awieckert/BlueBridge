@@ -1,16 +1,18 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Message } from '@/types/message';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 interface MessageBubbleProps {
   message: Message;
+  onRetry?: (message: Message) => void;
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
   const colorScheme = useColorScheme();
   const isOutgoing = message.direction === 'outgoing';
   const isDark = colorScheme === 'dark';
+  const showRetryButton = message.status === 'failed' && isOutgoing && onRetry;
 
   const getStatusText = () => {
     if (message.direction === 'incoming') return null;
@@ -59,12 +61,21 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               style={[
                 styles.status,
                 message.status === 'failed' && styles.statusFailed,
+                message.status === 'queued' && styles.statusQueued,
               ]}
             >
               {statusText}
             </Text>
           )}
         </View>
+        {showRetryButton && (
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => onRetry(message)}
+          >
+            <Text style={styles.retryText}>Tap to retry</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -131,5 +142,17 @@ const styles = StyleSheet.create({
   },
   statusFailed: {
     color: '#FF3B30',
+  },
+  statusQueued: {
+    color: '#FF9500',
+  },
+  retryButton: {
+    marginTop: 6,
+    paddingVertical: 4,
+  },
+  retryText: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.9)',
+    textDecorationLine: 'underline',
   },
 });
