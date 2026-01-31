@@ -147,13 +147,19 @@ export default function ChatScreen() {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
 
-      // Send via messageService
-      const response = await messageService.sendMessage(
-        conversation.sender,
-        conversation.senderType,
-        messageContent,
-        now
-      );
+      // Send via messageService (group or 1-to-1)
+      const response = conversation.isGroup
+        ? await messageService.sendGroupMessage(
+            conversation.participants || [],
+            messageContent,
+            currentConversationId.startsWith('chat') ? currentConversationId : undefined
+          )
+        : await messageService.sendMessage(
+            conversation.sender,
+            conversation.senderType,
+            messageContent,
+            now
+          );
 
       console.log('[ChatScreen] Message sent successfully:', response);
 
@@ -176,6 +182,8 @@ export default function ChatScreen() {
           lastMessagePreview: messageContent,
           lastMessageTimestamp: now,
           unreadCount: 0,
+          isGroup: conversation.isGroup || false,
+          participants: conversation.participants || null,
           createdAt: conversation.createdAt || now,
           updatedAt: now,
         });
@@ -323,9 +331,21 @@ export default function ChatScreen() {
     }
   }, []);
 
-  const renderMessage = useCallback(({ item }: { item: Message }) => (
-    <MessageBubble message={item} onRetry={handleRetryMessage} />
-  ), [handleRetryMessage]);
+  const renderMessage = useCallback(({ item }: { item: Message }) => {
+    // For group messages, try to get sender name from participants or use phone/email
+    const senderName = conversation?.isGroup && item.direction === 'incoming'
+      ? formatSender(item.sender, item.senderType)
+      : undefined;
+
+    return (
+      <MessageBubble
+        message={item}
+        onRetry={handleRetryMessage}
+        isGroup={conversation?.isGroup}
+        senderName={senderName}
+      />
+    );
+  }, [handleRetryMessage, conversation]);
 
   const keyExtractor = useCallback((item: Message) => item.id.toString(), []);
 
@@ -342,7 +362,9 @@ export default function ChatScreen() {
 
   // Determine header title: contact name if available, otherwise formatted sender
   const headerTitle = conversation
-    ? conversation.contactName || formatSender(conversation.sender, conversation.senderType)
+    ? conversation.isGroup
+      ? conversation.contactName || `Group (${conversation.participants?.length || 0})`
+      : conversation.contactName || formatSender(conversation.sender, conversation.senderType)
     : 'Chat';
 
   return (

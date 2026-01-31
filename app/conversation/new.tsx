@@ -338,10 +338,16 @@ export default function NewConversationScreen() {
         />
       )}
 
-      {/* Manual Entry Button */}
+      {/* Action Buttons */}
       <View style={[styles.manualEntryContainer, isDark && styles.manualEntryContainerDark]}>
         <Pressable
-          style={[styles.manualEntryButton, isDark && styles.manualEntryButtonDark]}
+          style={[styles.actionButton, styles.groupButton, isDark && styles.groupButtonDark]}
+          onPress={() => router.push('/conversation/new-group')}
+        >
+          <Text style={styles.groupButtonText}>➕ New Group</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.actionButton, styles.manualEntryButton, isDark && styles.manualEntryButtonDark]}
           onPress={() => setShowManualEntry(true)}
         >
           <Text style={styles.manualEntryButtonText}>Enter Contact Manually</Text>
@@ -598,12 +604,28 @@ const styles = StyleSheet.create({
   manualEntryContainerDark: {
     backgroundColor: '#1C1C1E',
     borderTopColor: '#38383A',
+    flexDirection: 'row',
+    gap: 12,
   },
-  manualEntryButton: {
-    backgroundColor: '#007AFF',
+  actionButton: {
+    flex: 1,
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
+  },
+  groupButton: {
+    backgroundColor: '#4CAF50',
+  },
+  groupButtonDark: {
+    backgroundColor: '#388E3C',
+  },
+  groupButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  manualEntryButton: {
+    backgroundColor: '#007AFF',
   },
   manualEntryButtonDark: {
     backgroundColor: '#0A84FF',

@@ -59,8 +59,8 @@ export default function ConversationsScreen() {
       Alert.alert(
         'Delete Conversation?',
         stats.messageCount > 0
-          ? `This will permanently delete ${stats.messageCount} message${stats.messageCount === 1 ? '' : 's'}. This cannot be undone.`
-          : 'This will permanently delete this conversation. This cannot be undone.',
+          ? `This will permanently delete ${stats.messageCount} message${stats.messageCount === 1 ? '' : 's'} from this device and iMessage on your Mac.\n\nThis cannot be undone.`
+          : 'This will permanently delete this conversation from this device and iMessage on your Mac.\n\nThis cannot be undone.',
         [
           {
             text: 'Cancel',

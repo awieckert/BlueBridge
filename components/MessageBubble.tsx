@@ -6,13 +6,16 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 interface MessageBubbleProps {
   message: Message;
   onRetry?: (message: Message) => void;
+  isGroup?: boolean;
+  senderName?: string;
 }
 
-export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
+export function MessageBubble({ message, onRetry, isGroup = false, senderName }: MessageBubbleProps) {
   const colorScheme = useColorScheme();
   const isOutgoing = message.direction === 'outgoing';
   const isDark = colorScheme === 'dark';
   const showRetryButton = message.status === 'failed' && isOutgoing && onRetry;
+  const showSenderName = isGroup && !isOutgoing && senderName;
 
   const getStatusText = () => {
     if (message.direction === 'incoming') return null;
@@ -43,6 +46,11 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
           !isOutgoing && isDark && styles.incomingBubbleDark,
         ]}
       >
+        {showSenderName && (
+          <Text style={[styles.senderName, isDark && styles.senderNameDark]}>
+            {senderName}
+          </Text>
+        )}
         <Text
           style={[
             styles.messageText,
@@ -97,6 +105,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 18,
+  },
+  senderName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#007AFF',
+    marginBottom: 4,
+  },
+  senderNameDark: {
+    color: '#0A84FF',
   },
   outgoingBubble: {
     backgroundColor: '#007AFF',

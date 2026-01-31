@@ -11,6 +11,7 @@ export interface MessagesStore {
   getMessagesByConversation: (conversationId: string) => Message[];
 
   setActiveConversation: (conversationId: string | null) => void;
+  addConversation: (conversation: Conversation) => void;
   updateConversation: (conversationId: string, updates: Partial<Conversation>) => void;
   updateConversationId: (oldId: string, newId: string) => void;
   incrementUnreadCount: (conversationId: string) => void;

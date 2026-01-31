@@ -29,6 +29,8 @@ export const SCHEMA = {
       last_message_preview TEXT,
       last_message_timestamp INTEGER,
       unread_count INTEGER NOT NULL DEFAULT 0,
+      is_group INTEGER NOT NULL DEFAULT 0 CHECK(is_group IN (0, 1)),
+      participants TEXT,
       created_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') || substr(strftime('%f', 'now'), 4) as INTEGER)),
       updated_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') || substr(strftime('%f', 'now'), 4) as INTEGER)),
       UNIQUE(sender, sender_type)
@@ -119,6 +121,13 @@ export async function initializeDatabase(): Promise<SQLite.SQLiteDatabase> {
         await migrateSenderTypeToNumeric(db);
       } catch (error) {
         console.warn("Sender type migration failed (non-critical):", error);
+      }
+
+      // Run migration to add group support columns
+      try {
+        await migrateAddGroupSupport(db);
+      } catch (error) {
+        console.warn("Group support migration failed (non-critical):", error);
       }
 
       dbInstance = db;
@@ -293,6 +302,52 @@ async function migrateSenderTypeToNumeric(db: SQLite.SQLiteDatabase): Promise<vo
     console.log('[Migration] Sender type migration completed successfully');
   } catch (error) {
     console.error('[Migration] Failed to migrate sender_type:', error);
+    throw error;
+  }
+}
+
+/**
+ * Migrate to add group conversation support
+ * Adds is_group and participants columns to conversations table
+ */
+async function migrateAddGroupSupport(db: SQLite.SQLiteDatabase): Promise<void> {
+  try {
+    console.log('[Migration] Checking if group support migration is needed...');
+
+    // Check if columns already exist
+    const tableInfo = await db.getAllAsync<{ name: string }>(
+      "PRAGMA table_info(conversations)"
+    );
+
+    const hasIsGroup = tableInfo.some(col => col.name === 'is_group');
+    const hasParticipants = tableInfo.some(col => col.name === 'participants');
+
+    if (hasIsGroup && hasParticipants) {
+      console.log('[Migration] Group support columns already exist, skipping migration');
+      return;
+    }
+
+    console.log('[Migration] Adding group support columns...');
+
+    // Add is_group column if it doesn't exist
+    if (!hasIsGroup) {
+      await db.execAsync(`
+        ALTER TABLE conversations ADD COLUMN is_group INTEGER NOT NULL DEFAULT 0 CHECK(is_group IN (0, 1));
+      `);
+      console.log('[Migration] Added is_group column');
+    }
+
+    // Add participants column if it doesn't exist
+    if (!hasParticipants) {
+      await db.execAsync(`
+        ALTER TABLE conversations ADD COLUMN participants TEXT;
+      `);
+      console.log('[Migration] Added participants column');
+    }
+
+    console.log('[Migration] Group support migration completed successfully');
+  } catch (error) {
+    console.error('[Migration] Failed to add group support:', error);
     throw error;
   }
 }

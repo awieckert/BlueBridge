@@ -26,7 +26,10 @@
       "Bash(taskkill //F //PID 20820)",
       "Bash(taskkill:*)",
       "Bash(adb reverse:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "WebFetch(domain:gist.github.com)",
+      "Bash(dotnet build:*)",
+      "Bash(grep:*)"
     ]
   }
 }

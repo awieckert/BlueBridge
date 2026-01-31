@@ -1,10 +1,13 @@
 import { storageService } from './storageService';
+import { messageService } from './messageService';
 import { useMessagesStore } from '../stores/messagesStore';
 import { useQueueStore } from '../stores/queueStore';
 
 export class ConversationService {
   /**
    * Delete a conversation with all its messages and queued items
+   * Attempts to delete from backend (iMessage on Mac) first, then deletes locally
+   * Uses graceful degradation - local deletion proceeds even if backend fails
    */
   async deleteConversation(conversationId: string): Promise<void> {
     console.log(`[ConversationService] Starting deletion of conversation ${conversationId}`);
@@ -17,14 +20,29 @@ export class ConversationService {
         return;
       }
 
-      // 1. Delete from database (messages first, then conversation)
+      // Step 1: Attempt backend deletion (iMessage on Mac)
+      // This will close Messages app, delete from SQLite, and reopen
+      try {
+        const backendResponse = await messageService.deleteConversation(conversationId, true);
+        console.log(
+          `[ConversationService] Backend deletion successful: ${backendResponse.messagesDeleted} messages deleted, ` +
+          `Messages app ${backendResponse.messagesAppClosed ? 'was closed' : 'remained open'}`
+        );
+      } catch (backendError) {
+        // Log the error but continue with local deletion
+        // This allows offline deletion to still work
+        console.warn('[ConversationService] Backend deletion failed, continuing with local deletion:', backendError);
+        // Note: We don't throw here - graceful degradation allows local deletion to proceed
+      }
+
+      // Step 2: Delete from local database (messages first, then conversation)
       // This will CASCADE delete related queue items via foreign key
       await storageService.deleteConversation(conversationId);
 
-      // 2. Update Zustand stores
+      // Step 3: Update Zustand stores
       useMessagesStore.getState().deleteConversation(conversationId);
 
-      // 3. Clean up queue store by sender/senderType
+      // Step 4: Clean up queue store by sender/senderType
       useQueueStore.getState().removeQueuedMessagesForConversation(
         conversation.sender,
         conversation.senderType

@@ -94,8 +94,8 @@ export class StorageService {
     const db = await getDatabase();
     await db.runAsync(
       `INSERT OR REPLACE INTO conversations
-       (id, sender, sender_type, contact_name, last_message_preview, last_message_timestamp, unread_count, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, sender, sender_type, contact_name, last_message_preview, last_message_timestamp, unread_count, is_group, participants, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         conversation.id,
         conversation.sender,
@@ -104,6 +104,8 @@ export class StorageService {
         conversation.lastMessagePreview,
         conversation.lastMessageTimestamp,
         conversation.unreadCount,
+        conversation.isGroup ? 1 : 0,
+        conversation.participants ? JSON.stringify(conversation.participants) : null,
         conversation.createdAt,
         conversation.updatedAt,
       ]
@@ -169,6 +171,8 @@ export class StorageService {
       last_message_preview: string | null;
       last_message_timestamp: number | null;
       unread_count: number;
+      is_group: number;
+      participants: string | null;
       created_at: number;
       updated_at: number;
     }>('SELECT * FROM conversations WHERE id = ?', [conversationId]);
@@ -183,6 +187,8 @@ export class StorageService {
       lastMessagePreview: row.last_message_preview,
       lastMessageTimestamp: row.last_message_timestamp,
       unreadCount: row.unread_count,
+      isGroup: row.is_group === 1,
+      participants: row.participants ? JSON.parse(row.participants) : null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -198,6 +204,8 @@ export class StorageService {
       last_message_preview: string | null;
       last_message_timestamp: number | null;
       unread_count: number;
+      is_group: number;
+      participants: string | null;
       created_at: number;
       updated_at: number;
     }>('SELECT * FROM conversations WHERE sender = ? AND sender_type = ?', [sender, senderType]);
@@ -212,6 +220,8 @@ export class StorageService {
       lastMessagePreview: row.last_message_preview,
       lastMessageTimestamp: row.last_message_timestamp,
       unreadCount: row.unread_count,
+      isGroup: row.is_group === 1,
+      participants: row.participants ? JSON.parse(row.participants) : null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -227,6 +237,8 @@ export class StorageService {
       last_message_preview: string | null;
       last_message_timestamp: number | null;
       unread_count: number;
+      is_group: number;
+      participants: string | null;
       created_at: number;
       updated_at: number;
     }>('SELECT * FROM conversations ORDER BY last_message_timestamp DESC');
@@ -239,6 +251,8 @@ export class StorageService {
       lastMessagePreview: row.last_message_preview,
       lastMessageTimestamp: row.last_message_timestamp,
       unreadCount: row.unread_count,
+      isGroup: row.is_group === 1,
+      participants: row.participants ? JSON.parse(row.participants) : null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
@@ -257,12 +271,33 @@ export class StorageService {
         lastMessagePreview: null,
         lastMessageTimestamp: null,
         unreadCount: 0,
+        isGroup: false,
+        participants: null,
         createdAt: now,
         updatedAt: now,
       };
       await this.saveConversation(conversation);
     }
 
+    return conversation;
+  }
+
+  async createGroupConversation(participants: string[], contactName: string | null = null): Promise<Conversation> {
+    const now = Date.now();
+    const conversation: Conversation = {
+      id: uuidv4(), // Temporary ID, will be replaced by backend response
+      sender: participants.join(', '), // Comma-separated list for display
+      senderType: 0, // Default to phone type
+      contactName,
+      lastMessagePreview: null,
+      lastMessageTimestamp: null,
+      unreadCount: 0,
+      isGroup: true,
+      participants,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this.saveConversation(conversation);
     return conversation;
   }
 

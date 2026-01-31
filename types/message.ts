@@ -22,6 +22,8 @@ export interface Conversation {
   lastMessagePreview: string | null;
   lastMessageTimestamp: number | null;
   unreadCount: number;
+  isGroup: boolean;
+  participants: string[] | null; // Array of phone numbers/emails for group conversations
   createdAt: number;
   updatedAt: number;
 }

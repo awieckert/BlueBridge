@@ -10,8 +10,14 @@ export interface SendMessageRequest {
 export interface SendMessageResponse {
   success: boolean;
   conversationId: string;
-  messageId?: number;
+  messageId?: string;
   error?: string;
+}
+
+export interface SendGroupMessageRequest {
+  participants: string[];
+  message: string;
+  conversationId?: string; // Optional - if provided, send to existing group
 }
 
 export interface ReceiveMessagePayload {
@@ -21,6 +27,19 @@ export interface ReceiveMessagePayload {
   senderType: SenderType;
   message: string;
   timestamp: number;
+}
+
+export interface DeleteConversationRequest {
+  conversationId: string;
+  reopenMessagesApp?: boolean;
+}
+
+export interface DeleteConversationResponse {
+  success: boolean;
+  timestamp: string;
+  error?: string;
+  messagesDeleted: number;
+  messagesAppClosed: boolean;
 }
 
 export interface ApiError {

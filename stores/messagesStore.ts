@@ -33,6 +33,15 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
   setActiveConversation: (conversationId) =>
     set({ activeConversationId: conversationId }),
 
+  addConversation: (conversation) =>
+    set((state) => {
+      // Prevent duplicates
+      if (state.conversations.some((c) => c.id === conversation.id)) {
+        return state;
+      }
+      return { conversations: [...state.conversations, conversation] };
+    }),
+
   updateConversation: (conversationId, updates) =>
     set((state) => ({
       conversations: state.conversations.map((conv) =>

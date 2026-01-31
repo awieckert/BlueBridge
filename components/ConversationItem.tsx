@@ -38,8 +38,13 @@ function ConversationItemComponent({ conversation, onPress }: ConversationItemPr
   };
 
   // Determine display name: contact name if available, otherwise formatted sender
-  const displayName = conversation.contactName || formatSender(conversation.sender, conversation.senderType);
-  const avatarLetter = conversation.contactName
+  const displayName = conversation.isGroup
+    ? conversation.contactName || `Group (${conversation.participants?.length || 0})`
+    : conversation.contactName || formatSender(conversation.sender, conversation.senderType);
+
+  const avatarLetter = conversation.isGroup
+    ? '👥'
+    : conversation.contactName
     ? conversation.contactName.charAt(0).toUpperCase()
     : conversation.sender.charAt(0).toUpperCase();
 
@@ -62,12 +67,17 @@ function ConversationItemComponent({ conversation, onPress }: ConversationItemPr
 
       <View style={styles.contentContainer}>
         <View style={styles.headerRow}>
-          <Text
-            style={[styles.phoneNumber, isDark && styles.phoneNumberDark]}
-            numberOfLines={1}
-          >
-            {displayName}
-          </Text>
+          <View style={styles.nameContainer}>
+            {conversation.isGroup && (
+              <Text style={styles.groupIcon}>👥 </Text>
+            )}
+            <Text
+              style={[styles.phoneNumber, isDark && styles.phoneNumberDark]}
+              numberOfLines={1}
+            >
+              {displayName}
+            </Text>
+          </View>
           <Text style={[styles.timestamp, isDark && styles.timestampDark]}>
             {formatTimestamp(conversation.lastMessageTimestamp)}
           </Text>
@@ -138,6 +148,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 4,
+  },
+  nameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  groupIcon: {
+    fontSize: 14,
+    marginRight: 4,
   },
   phoneNumber: {
     fontSize: 17,
