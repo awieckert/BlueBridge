@@ -53,7 +53,7 @@ export class SignalRService {
       const hubUrl = `${serverUrl}/hubs/messages`;
 
       this.connection = new signalR.HubConnectionBuilder()
-        .withUrl(hubUrl, {
+        .withUrl(`${hubUrl}?access_token=${encodeURIComponent(apiKey)}`, {
           headers: { 'BB-API-KEY': apiKey },
         })
         .withAutomaticReconnect({

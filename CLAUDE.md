@@ -63,6 +63,7 @@ utils/
 ## Implemented Features
 
 ### Core Messaging
+
 - **1-to-1 Conversations**: Full send/receive with real-time updates
 - **Optimistic UI**: Messages appear immediately, status updated on server response
 - **Message Status Tracking**: Visual badges for Sent, Delivered, Queued, Failed
@@ -72,6 +73,7 @@ utils/
 - **Swipe-to-Delete**: Gesture-based conversation deletion with confirmation
 
 ### Offline Support (IMPLEMENTED)
+
 - **Automatic Queueing**: Failed messages auto-queue when network is unavailable
 - **Exponential Backoff Retry**: 1s → 2s → 4s → 8s → 16s (max 5 attempts)
 - **Network Monitoring**: Auto-detects network changes via NetInfo
@@ -80,6 +82,7 @@ utils/
 - **Foreground Processing**: Queue processes when app returns to foreground
 
 ### Contact Integration
+
 - **Device Contact Access**: Permission-based contact loading via expo-contacts
 - **Contact Search**: Real-time search with debouncing
 - **Name Enrichment**: Auto-populates contact names in conversations
@@ -88,6 +91,7 @@ utils/
 - **Flexible Phone Matching**: Handles various phone number formats
 
 ### Real-time Connection
+
 - **SignalR Hub**: WebSocket connection to `/hubs/messages`
 - **Auto-Reconnection**: Exponential backoff (0s → 2s → 10s → 30s → 60s)
 - **Keep-alive Pings**: 15-second intervals with 60s server timeout
@@ -96,6 +100,7 @@ utils/
 - **Batch Message Sync**: Receives queued messages on reconnect
 
 ### UI/UX Features
+
 - **Light/Dark Mode**: System-aware theming
 - **Haptic Feedback**: Touch responses for actions (light/medium/warning/success)
 - **Animated Scroll Button**: Appears when scrolled up, spring animation
@@ -106,6 +111,7 @@ utils/
 - **Keyboard Avoidance**: Platform-specific handling (iOS padding)
 
 ### Settings & Configuration
+
 - **API Key Management**: Secure entry with masked input
 - **Server URL Config**: Dynamic endpoint selection (default: http://192.168.1.50:5067)
 - **Connection Status Display**: Real-time indicator with reconnection option
@@ -205,6 +211,7 @@ New conversations start with temporary UUID, then migrate when server responds:
 ## Error Handling
 
 ### HTTP Status Code Mapping
+
 - **401/403**: "Authentication failed. Please check your API key in Settings."
 - **429**: "Too many messages sent. Please wait a moment and try again."
 - **500/503**: "Server error. Please try again later."
@@ -212,12 +219,14 @@ New conversations start with temporary UUID, then migrate when server responds:
 - **Other**: Generic "Failed to send message. Please try again."
 
 ### Error Recovery Strategies
+
 - **Network Errors**: Auto-queue → Retry with exponential backoff → Mark failed after max attempts
 - **Auth Errors**: Show error banner, don't queue (requires user intervention)
 - **Rate Limits**: Show error, don't retry automatically
 - **Server Errors**: Queue and retry (may be temporary issue)
 
 ### User-Facing Error Feedback
+
 - **Toast Notifications**: For transient errors (network, server)
 - **Status Badges**: On messages (Queued, Failed with retry button)
 - **Connection Banner**: Persistent indicator at top of conversation list
@@ -225,7 +234,8 @@ New conversations start with temporary UUID, then migrate when server responds:
 
 ## App Lifecycle & State Management
 
-### Initialization (app/_layout.tsx)
+### Initialization (app/\_layout.tsx)
+
 1. Initialize SQLite database with schema migration
 2. Load conversations and recent messages into Zustand stores
 3. Load API key from AsyncStorage (authStore persisted)
@@ -234,6 +244,7 @@ New conversations start with temporary UUID, then migrate when server responds:
 6. Setup app state change listeners (background/foreground)
 
 ### Background/Foreground Handling
+
 - **On Background**: SignalR connection maintained, can still receive messages
 - **On Foreground**:
   - Ensure SignalR connected (reconnect if needed)
@@ -241,6 +252,7 @@ New conversations start with temporary UUID, then migrate when server responds:
   - Refresh connection status
 
 ### Network State Changes
+
 - **Online Detected**:
   - Trigger SignalR reconnection attempt
   - Process message queue immediately
@@ -255,30 +267,36 @@ New conversations start with temporary UUID, then migrate when server responds:
 **File**: `utils/constants.ts`
 
 **API Settings** (Configurable in Settings screen):
+
 - **Default Server URL**: `http://192.168.1.50:5067` (development server)
 - **API Endpoint**: `/api/messages/send`
 - **SignalR Hub**: `/hubs/messages`
 - **API Key**: User-provided, persisted in AsyncStorage via Zustand
 
 **Message Queue Settings**:
+
 - **Max Retry Attempts**: 5
 - **Retry Delays**: [1000ms, 2000ms, 4000ms, 8000ms, 16000ms] (exponential backoff)
 - **Queue Processing**: Triggers on network restore, app foreground, send failure
 
 **Message Constraints**:
+
 - **Max Message Length**: 1000 characters
 - **Batch Size**: 50 messages (for pagination/loading)
 
 **SignalR Settings**:
+
 - **Ping Interval**: 15 seconds
 - **Server Timeout**: 60 seconds
 - **Reconnect Delays**: [0ms, 2000ms, 10000ms, 30000ms, 60000ms]
 
 **Contact Settings**:
+
 - **Cache TTL**: 5 minutes
 - **Default Country Code**: US (for phone number parsing)
 
 **UI Settings**:
+
 - **Themes**: System-aware light/dark mode
 - **Network Detection**: NetInfo monitors connectivity
 - **Haptic Feedback**: Platform-specific (iOS/Android)
@@ -286,6 +304,7 @@ New conversations start with temporary UUID, then migrate when server responds:
 ## Important Notes
 
 ### Phone Number Handling
+
 - **Normalization**: All numbers normalized to E.164 format (+1234567890) via libphonenumber-js
 - **Default Country**: US assumed for parsing
 - **Validation**: Strict validation before sending
@@ -293,6 +312,7 @@ New conversations start with temporary UUID, then migrate when server responds:
 - **Matching**: Flexible matching handles various input formats
 
 ### Type System
+
 - **SenderType Enum**: Phone=0, Email=1 (matches BlueBridge-Relay backend schema)
 - **Message Status Lifecycle**:
   - 'sent': Initial optimistic state when created
@@ -302,12 +322,14 @@ New conversations start with temporary UUID, then migrate when server responds:
 - **Message Direction**: 'incoming' (from SignalR) | 'outgoing' (user sent)
 
 ### State Management
+
 - **Connection States**: 'connected' (green) | 'connecting' (blue) | 'reconnecting' (orange) | 'disconnected' (red)
 - **Store Persistence**: authStore persisted to AsyncStorage, others in-memory only
 - **Selective Subscriptions**: Components subscribe to specific state slices to minimize re-renders
 - **Reactive Updates**: Store changes trigger immediate UI updates via Zustand
 
 ### Data Integrity
+
 - **Conversation ID Migration**: Temp UUIDs replaced with server IDs on first message
 - **Message Deduplication**: Prevents duplicate messages in store
 - **Cascade Deletes**: Foreign keys ensure orphaned data cleanup
@@ -315,6 +337,7 @@ New conversations start with temporary UUID, then migrate when server responds:
 - **Contact Name Sync**: Auto-populates from device contacts on message receive
 
 ### Security
+
 - **API Key**: Stored in AsyncStorage, sent via BB-API-KEY header
 - **E.164 Normalization**: Prevents phone number spoofing
 - **SQL Injection**: Parameterized queries throughout
@@ -323,6 +346,7 @@ New conversations start with temporary UUID, then migrate when server responds:
 ## Current Limitations & Future Features
 
 ### Implemented (MVP Complete)
+
 - ✅ 1-to-1 messaging (send/receive)
 - ✅ Offline message queue with automatic retry
 - ✅ Device contact integration
@@ -333,10 +357,10 @@ New conversations start with temporary UUID, then migrate when server responds:
 - ✅ Light/dark mode theming
 
 ### Not Yet Implemented
+
 - ❌ **Group Messaging**: Currently only supports 1-to-1 conversations
 - ❌ **Message Deletion**: Conversation deletion works, but no per-message deletion
 - ❌ **Push Notifications**: No background notification support
-- ❌ **Read Receipts**: Only tracks delivery, not read status
 - ❌ **Media Attachments**: Text-only messaging (no images/files)
 - ❌ **Message Editing**: No edit functionality for sent messages
 - ❌ **Search in Messages**: Can search conversations, but not message content
@@ -345,6 +369,7 @@ New conversations start with temporary UUID, then migrate when server responds:
 - ❌ **User Profiles**: Minimal user identity (just API key)
 
 ### Known Issues
+
 - **ConversationId Migration**: Complex flow when creating new conversations (temp ID → real ID)
 - **Debug Logging**: Some verbose console logs still present from MVP development
 - **Hidden Screens**: `explore.tsx` and root `index.tsx` exist but are not exposed in navigation
