@@ -12,60 +12,52 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { contactService } from '../../services/contactService';
-import { StorageService } from '../../services/storageService';
-import { useMessagesStore } from '../../stores/messagesStore';
-import { Contact } from '../../types/contact';
-import { normalizePhoneNumber } from '../../utils/phoneNumber';
-
-const storageService = new StorageService();
+import { useContactStore } from '@/stores/contactStore';
+import { storageService } from '@/services/storageService';
+import { useMessagesStore } from '@/stores/messagesStore';
+import { Contact } from '@/services/contactService';
+import { normalizePhoneNumber } from '@/utils/phoneNumber';
 
 export default function NewGroupScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
-  const [contacts, setContacts] = useState<Contact[]>([]);
+  const {
+    contacts,
+    permissionStatus,
+    isLoading,
+    requestPermission,
+    loadContacts,
+    searchContactsByQuery,
+  } = useContactStore();
+
   const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const [selectedContacts, setSelectedContacts] = useState<Contact[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
 
   const addConversation = useMessagesStore((state) => state.addConversation);
 
+  // Request permission and load contacts on mount
   useEffect(() => {
-    loadContacts();
+    const init = async () => {
+      if (permissionStatus === 'undetermined') {
+        await requestPermission();
+      } else if (permissionStatus === 'granted' && contacts.length === 0) {
+        await loadContacts();
+      }
+    };
+    init();
   }, []);
 
+  // Filter contacts based on search query
   useEffect(() => {
     if (searchQuery.trim() === '') {
       setFilteredContacts(contacts);
     } else {
-      const query = searchQuery.toLowerCase();
-      setFilteredContacts(
-        contacts.filter(
-          (contact) =>
-            contact.name.toLowerCase().includes(query) ||
-            contact.phoneNumbers.some((p) => p.number.includes(query)) ||
-            contact.emails.some((e) => e.email.toLowerCase().includes(query))
-        )
-      );
+      setFilteredContacts(searchContactsByQuery(searchQuery));
     }
   }, [searchQuery, contacts]);
-
-  const loadContacts = async () => {
-    try {
-      setLoading(true);
-      const loadedContacts = await contactService.getContacts();
-      setContacts(loadedContacts);
-      setFilteredContacts(loadedContacts);
-    } catch (error) {
-      console.error('Failed to load contacts:', error);
-      Alert.alert('Error', 'Failed to load contacts');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const toggleContact = (contact: Contact) => {
     setSelectedContacts((prev) => {
@@ -91,14 +83,11 @@ export default function NewGroupScreen() {
       const participants: string[] = [];
       for (const contact of selectedContacts) {
         if (contact.phoneNumbers.length > 0) {
-          // Use first phone number and normalize it
-          const normalized = normalizePhoneNumber(contact.phoneNumbers[0].number);
-          if (normalized) {
-            participants.push(normalized);
-          }
+          // Use first phone number (already normalized)
+          participants.push(contact.phoneNumbers[0]);
         } else if (contact.emails.length > 0) {
           // Use first email as fallback
-          participants.push(contact.emails[0].email);
+          participants.push(contact.emails[0]);
         }
       }
 
@@ -155,8 +144,8 @@ export default function NewGroupScreen() {
             {item.name}
           </Text>
           <Text style={[styles.contactDetail, { color: isDark ? '#aaa' : '#666' }]}>
-            {hasPhone && item.phoneNumbers[0].number}
-            {hasEmail && !hasPhone && item.emails[0].email}
+            {hasPhone && item.rawPhoneNumbers[0]}
+            {hasEmail && !hasPhone && item.emails[0]}
           </Text>
         </View>
         {selected && (
@@ -177,6 +166,13 @@ export default function NewGroupScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#1c1c1c' : '#f5f5f5' }]}>
+      {/* Header */}
+      <View style={[styles.header, { backgroundColor: isDark ? '#2c2c2c' : '#fff' }]}>
+        <Text style={[styles.headerTitle, { color: isDark ? '#fff' : '#000' }]}>
+          New Group
+        </Text>
+      </View>
+
       {/* Selected Contacts Bar */}
       {selectedContacts.length > 0 && (
         <View style={[styles.selectedBar, { backgroundColor: isDark ? '#2c2c2c' : '#fff' }]}>
@@ -204,9 +200,26 @@ export default function NewGroupScreen() {
       </View>
 
       {/* Contacts List */}
-      {loading ? (
+      {isLoading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#2196F3" />
+        </View>
+      ) : permissionStatus === 'denied' ? (
+        <View style={styles.centerContainer}>
+          <Text style={{ color: isDark ? '#fff' : '#000', fontSize: 18, fontWeight: '600', marginBottom: 12 }}>
+            Contacts Permission Required
+          </Text>
+          <Text style={{ color: isDark ? '#aaa' : '#666', marginBottom: 24, textAlign: 'center' }}>
+            Allow access to contacts to create group conversations.
+          </Text>
+          <TouchableOpacity
+            style={styles.permissionButton}
+            onPress={requestPermission}
+          >
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>
+              Grant Permission
+            </Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -248,6 +261,15 @@ export default function NewGroupScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  header: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '700',
   },
   selectedBar: {
     padding: 12,
@@ -320,6 +342,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 32,
+  },
+  permissionButton: {
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
   },
   createButton: {
     position: 'absolute',

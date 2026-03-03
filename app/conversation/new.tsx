@@ -15,7 +15,6 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useContactStore } from '@/stores/contactStore';
 import { useMessagesStore } from '@/stores/messagesStore';
 import { ContactListItem } from '@/components/ContactListItem';
-import { ConversationItem } from '@/components/ConversationItem';
 import { Contact } from '@/services/contactService';
 import { Conversation, SenderType } from '@/types/message';
 import { normalizePhoneNumber, validatePhoneNumber, formatPhoneNumber } from '@/utils/phoneNumber';
@@ -37,7 +36,6 @@ export default function NewConversationScreen() {
     searchContactsByQuery,
   } = useContactStore();
 
-  const { conversations } = useMessagesStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showManualEntry, setShowManualEntry] = useState(false);
@@ -65,28 +63,8 @@ export default function NewConversationScreen() {
     return searchContactsByQuery(searchQuery);
   }, [searchQuery, contacts]);
 
-  // Filter conversations based on search query
-  const filteredConversations = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return conversations;
-    }
-    const lowerQuery = searchQuery.toLowerCase();
-    return conversations.filter((conv) => {
-      // Search in contact name
-      if (conv.contactName && conv.contactName.toLowerCase().includes(lowerQuery)) {
-        return true;
-      }
-      // Search in sender (phone number or email)
-      if (conv.sender.includes(lowerQuery)) {
-        return true;
-      }
-      // Search in last message preview
-      if (conv.lastMessagePreview && conv.lastMessagePreview.toLowerCase().includes(lowerQuery)) {
-        return true;
-      }
-      return false;
-    });
-  }, [searchQuery, conversations]);
+  // Don't show existing conversations in the new conversation screen
+  // Users should only select from contacts to start new conversations
 
   // Handle contact selection
   const handleContactPress = async (contact: Contact) => {
@@ -153,7 +131,8 @@ export default function NewConversationScreen() {
 
     if (existing) {
       // Navigate to existing conversation (has real ID from server)
-      router.push(`/chat/${existing.id}`);
+      // Use replace to remove new conversation screen from stack
+      router.replace(`/chat/${existing.id}`);
     } else {
       // Create temporary in-memory conversation for UI navigation
       const tempId = uuidv4();
@@ -176,14 +155,11 @@ export default function NewConversationScreen() {
       store.loadConversations([...store.conversations, tempConversation]);
 
       // Navigate to chat screen with temp UUID
-      router.push(`/chat/${tempId}`);
+      // Use replace to remove new conversation screen from stack
+      router.replace(`/chat/${tempId}`);
     }
   };
 
-  // Handle conversation selection
-  const handleConversationPress = (conversation: Conversation) => {
-    router.push(`/chat/${conversation.id}`);
-  };
 
   // Validate email address
   const validateEmail = (email: string): boolean => {
@@ -264,13 +240,20 @@ export default function NewConversationScreen() {
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <Text style={[styles.emptyText, isDark && styles.emptyTextDark]}>
-        No contacts or conversations found
+        No contacts found
       </Text>
     </View>
   );
 
   return (
     <View style={[styles.container, isDark && styles.containerDark]}>
+      {/* Header */}
+      <View style={[styles.header, isDark && styles.headerDark]}>
+        <Text style={[styles.headerTitle, isDark && styles.headerTitleDark]}>
+          New Conversation
+        </Text>
+      </View>
+
       {/* Search Bar */}
       <View style={[styles.searchContainer, isDark && styles.searchContainerDark]}>
         <TextInput
@@ -302,36 +285,18 @@ export default function NewConversationScreen() {
       {/* Content List */}
       {!isLoading && permissionStatus !== 'denied' && (
         <FlatList
-          data={[
-            ...filteredConversations.map((c) => ({ type: 'conversation', data: c })),
-            ...filteredContacts.map((c) => ({ type: 'contact', data: c })),
-          ]}
-          keyExtractor={(item, index) =>
-            item.type === 'conversation'
-              ? `conv-${item.data.id}`
-              : `contact-${(item.data as Contact).id}`
-          }
-          renderItem={({ item }) => {
-            if (item.type === 'conversation') {
-              return (
-                <ConversationItem
-                  conversation={item.data as Conversation}
-                  onPress={() => handleConversationPress(item.data as Conversation)}
-                />
-              );
-            } else {
-              return (
-                <ContactListItem
-                  contact={item.data as Contact}
-                  onPress={() => handleContactPress(item.data as Contact)}
-                  searchQuery={searchQuery}
-                />
-              );
-            }
-          }}
+          data={filteredContacts}
+          keyExtractor={(contact) => contact.id}
+          renderItem={({ item }) => (
+            <ContactListItem
+              contact={item}
+              onPress={() => handleContactPress(item)}
+              searchQuery={searchQuery}
+            />
+          )}
           ListEmptyComponent={renderEmpty}
           contentContainerStyle={
-            filteredContacts.length === 0 && filteredConversations.length === 0
+            filteredContacts.length === 0
               ? styles.emptyListContainer
               : undefined
           }
@@ -497,6 +462,24 @@ const styles = StyleSheet.create({
   containerDark: {
     backgroundColor: '#000000',
   },
+  header: {
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E5EA',
+  },
+  headerDark: {
+    backgroundColor: '#1C1C1E',
+    borderBottomColor: '#38383A',
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  headerTitleDark: {
+    color: '#FFFFFF',
+  },
   searchContainer: {
     padding: 12,
     backgroundColor: '#FFFFFF',
@@ -600,12 +583,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#E5E5EA',
+    flexDirection: 'row',
+    gap: 12,
   },
   manualEntryContainerDark: {
     backgroundColor: '#1C1C1E',
     borderTopColor: '#38383A',
-    flexDirection: 'row',
-    gap: 12,
   },
   actionButton: {
     flex: 1,
